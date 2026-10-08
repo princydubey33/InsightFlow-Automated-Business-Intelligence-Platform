@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  color-scheme: light dark;
+}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply font-sans antialiased text-slate-800 transition-colors duration-300;
+  /* Soft, premium animated mesh gradient background for light mode */
+  background-color: #f8fafc;
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(243, 100%, 94%, 1) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(172, 94%, 92%, 1) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, hsla(243, 100%, 94%, 1) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsla(348, 100%, 94%, 1) 0px, transparent 50%);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
+.dark body {
+  @apply text-slate-200 bg-slate-950;
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(243, 100%, 15%, 0.4) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(172, 94%, 15%, 0.4) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, hsla(243, 100%, 15%, 0.4) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsla(348, 100%, 15%, 0.4) 0px, transparent 50%);
+}
+
+@layer base {
+  ::selection {
+    @apply bg-brand/20 text-brand-dark dark:text-brand-light;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/60 backdrop-blur-xl border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl transition-colors duration-300;
+  }
+  
+  .dark .glass-panel {
+    @apply bg-slate-900/60 border-slate-700/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)];
+  }
+
+  .glass-nav {
+    @apply bg-white/70 backdrop-blur-md border-b border-white/50 transition-colors duration-300;
+  }
+  
+  .dark .glass-nav {
+    @apply bg-slate-900/70 border-slate-800/80;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-brand via-primary-500 to-rose-500;
+  }
+}
