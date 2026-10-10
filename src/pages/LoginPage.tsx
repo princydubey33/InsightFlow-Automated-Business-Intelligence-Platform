@@ -148,11 +148,26 @@ export default function LoginPage() {
               <div className="text-sm">
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     const emailInput = document.getElementById('email') as HTMLInputElement;
                     if (emailInput && emailInput.value) {
                       setError('');
-                      setSuccess(`Password reset instructions sent to ${emailInput.value}`);
+                      setSuccess('');
+                      try {
+                        const res = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ email: emailInput.value }),
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          setSuccess(data.message || `Password reset instructions sent to ${emailInput.value}`);
+                        } else {
+                          setError(data.detail || 'Failed to send reset email. Ensure backend is configured.');
+                        }
+                      } catch (err: any) {
+                        setError('Network error connecting to backend.');
+                      }
                     } else {
                       setSuccess('');
                       setError('Please enter your email address first to reset password');

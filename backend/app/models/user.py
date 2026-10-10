@@ -11,3 +11,5 @@ class User(Base):
     password = Column(String)
     role = Column(String, default="User")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    reset_token = Column(String, nullable=True, index=True)
+    reset_token_expires = Column(DateTime(timezone=True), nullable=True)

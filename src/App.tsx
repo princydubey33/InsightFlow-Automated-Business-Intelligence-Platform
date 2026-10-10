@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import DashboardLayout from './components/DashboardLayout';
 import DashboardOverview from './pages/DashboardOverview';
 import UploadDataPage from './pages/UploadDataPage';
@@ -38,6 +39,7 @@ function AnimatedRoutes() {
         <Route path="/" element={<PageWrapper><LandingPage /></PageWrapper>} />
         <Route path="/login" element={<PageWrapper><LoginPage /></PageWrapper>} />
         <Route path="/signup" element={<PageWrapper><SignupPage /></PageWrapper>} />
+        <Route path="/reset-password" element={<PageWrapper><ResetPasswordPage /></PageWrapper>} />
         
         <Route path="/app" element={<PageWrapper><DashboardLayout /></PageWrapper>}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
