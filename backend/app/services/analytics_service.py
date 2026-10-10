@@ -86,6 +86,7 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
         
         # 2. Identify return/refund rows
         is_return = pd.Series(False, index=df.index)
+        is_refund = pd.Series(False, index=df.index)
         ret_col = cols['returns']
         
         if ret_col:
@@ -95,28 +96,37 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
                 is_return = is_return | df[ret_col].astype(str).str.lower().isin(['yes', 'true', '1', 'y', 'refunded', 'returned'])
                 
         if rev_col:
-            is_return = is_return | (df[rev_col] < 0)
+            is_refund = is_refund | (df[rev_col] < 0)
             
         if qty_col:
-            is_return = is_return | (df[qty_col] < 0)
+            is_refund = is_refund | (df[qty_col] < 0)
             
         # 3. Calculate KPIs
+        # Exclude both returns and refunds from valid sales
+        invalid_sales = is_return | is_refund
+
         if rev_col:
             # Gross revenue (only positive sales)
-            analytics["totalRevenue"] = float(df.loc[~is_return, rev_col].sum())
+            analytics["totalRevenue"] = float(df.loc[~invalid_sales, rev_col].sum())
         
         if qty_col:
             # Gross quantity
-            analytics["totalQuantity"] = float(df.loc[~is_return, qty_col].sum())
+            analytics["totalQuantity"] = float(df.loc[~invalid_sales, qty_col].sum())
             
         order_col = cols['orders']
         if order_col:
             # Unique valid orders
-            analytics["totalOrders"] = int(df.loc[~is_return, order_col].nunique())
+            analytics["totalOrders"] = int(df.loc[~invalid_sales, order_col].nunique())
         else:
-            analytics["totalOrders"] = int((~is_return).sum())
+            analytics["totalOrders"] = int((~invalid_sales).sum())
             
-        analytics["totalReturns"] = int(is_return.sum())
+        if ret_col:
+            analytics["totalReturns"] = int(is_return.sum())
+        else:
+            analytics["totalReturns"] = None # Will display as N/A
+
+        # Export refunds as a proxy if explicit returns are missing
+        analytics["totalRefunds"] = int(is_refund.sum())
         
         if analytics["totalRevenue"] is not None and analytics["totalOrders"]:
             analytics["averageOrderValue"] = analytics["totalRevenue"] / analytics["totalOrders"]
@@ -134,7 +144,7 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
                 df['__formatted_date'] = df[date_col].dt.strftime('%Y-%m-%d')
                 
                 # Revenue by Date (Valid sales only)
-                valid_df = df[~is_return]
+                valid_df = df[~invalid_sales]
                 grouped_date = valid_df.groupby('__formatted_date')[rev_col].sum().reset_index()
                 grouped_date = grouped_date.sort_values('__formatted_date')
                 analytics["revenueByDate"] = [{"name": row['__formatted_date'], "value": row[rev_col]} for index, row in grouped_date.dropna().iterrows()]
@@ -142,14 +152,17 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
                 # Orders vs Returns by Date
                 orders_returns_data = []
                 for date_val, group in df.dropna(subset=['__formatted_date']).groupby('__formatted_date'):
-                    group_is_return = is_return[group.index]
+                    group_invalid = invalid_sales[group.index]
                     
                     if order_col:
-                        orders_count = int(group.loc[~group_is_return, order_col].nunique())
+                        orders_count = int(group.loc[~group_invalid, order_col].nunique())
                     else:
-                        orders_count = int((~group_is_return).sum())
+                        orders_count = int((~group_invalid).sum())
                         
-                    returns_count = int(group_is_return.sum())
+                    if ret_col:
+                        returns_count = int(is_return[group.index].sum())
+                    else:
+                        returns_count = 0
                     
                     orders_returns_data.append({
                         "name": str(date_val),
@@ -162,7 +175,7 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
                 analytics["ordersVsReturnsByDate"] = orders_returns_data
 
             # Product (Valid sales only)
-            valid_df = df[~is_return]
+            valid_df = df[~invalid_sales]
             prod_col = cols['product']
             if prod_col:
                 grouped_prod = valid_df.groupby(prod_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
@@ -182,6 +195,7 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
                 grouped_city = valid_df.groupby(city_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
                 analytics["revenueByCity"] = [{"name": str(row[city_col]), "value": row[rev_col]} for index, row in grouped_city.iterrows()]
                 analytics["top5Cities"] = analytics["revenueByCity"][:5]
+                analytics["cityLabel"] = "Regions" if "region" in city_col.lower() else "Locations" if "location" in city_col.lower() else "Cities"
 
         # Handle NaNs and convert types for JSON serialization
         # (This is implicitly handled by using float() and int() and str() above, 

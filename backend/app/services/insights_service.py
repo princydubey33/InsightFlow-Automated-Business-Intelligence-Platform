@@ -155,23 +155,27 @@ def generate_insights(file_path: str, file_type: str) -> List[Dict[str, Any]]:
             prod_col = cols['product']
             
             if ret_col and prod_col:
-                # Group by product and sum returns if numeric, or count if not
+                is_return = pd.Series(False, index=df.index)
                 if pd.api.types.is_numeric_dtype(df[ret_col]):
-                    grouped_ret = df.groupby(prod_col)[ret_col].sum()
+                    is_return = df[ret_col] > 0
                 else:
-                    grouped_ret = df[df[ret_col].notna()].groupby(prod_col).size()
+                    is_return = df[ret_col].astype(str).str.lower().isin(['yes', 'true', '1', 'y', 'refunded', 'returned'])
+
+                # Group by product and sum returns
+                if is_return.any():
+                    grouped_ret = df[is_return].groupby(prod_col).size()
                     
-                if not grouped_ret.empty and grouped_ret.max() > 0:
-                    worst_prod = grouped_ret.idxmax()
-                    worst_ret_val = grouped_ret.max()
-                    insights.append({
-                        "type": "metric",
-                        "title": "Highest Return Product",
-                        "description": "The product with the most returns.",
-                        "value": f"{worst_prod} ({worst_ret_val} returns)",
-                        "severity": "warning",
-                        "recommendation": "Check for defects or update product descriptions."
-                    })
+                    if not grouped_ret.empty and grouped_ret.max() > 0:
+                        worst_prod = grouped_ret.idxmax()
+                        worst_ret_val = grouped_ret.max()
+                        insights.append({
+                            "type": "metric",
+                            "title": "Highest Return Product",
+                            "description": "The product with the most returns.",
+                            "value": f"{worst_prod} ({worst_ret_val} returns)",
+                            "severity": "warning",
+                            "recommendation": "Check for defects or update product descriptions."
+                        })
                     
             # Data quality warnings (e.g., missing values)
             total_missing = df.isnull().sum().sum()

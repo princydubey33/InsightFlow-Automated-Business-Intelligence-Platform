@@ -49,10 +49,13 @@ interface ReportData {
   total_orders: number | null;
   total_quantity: number | null;
   total_returns: number | null;
+  total_refunds?: number | null;
   average_order_value: number | null;
   top_products: TopItem[];
   top_categories: TopItem[];
   top_cities: TopItem[];
+  city_label?: string;
+  cityLabel?: string;
   automated_insights: InsightItem[];
 }
 
@@ -410,11 +413,13 @@ export default function ReportsPage() {
 
               <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Returns</p>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    {report.total_returns !== null ? 'Total Returns' : report.total_refunds ? 'Refunds (Proxy)' : 'Returns'}
+                  </p>
                   <AlertTriangle className="w-4 h-4 text-rose-500" />
                 </div>
                 <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-                  {formatNumber(report.total_returns)}
+                  {report.total_returns !== null ? formatNumber(report.total_returns) : report.total_refunds ? formatNumber(report.total_refunds) : 'Unavailable'}
                 </span>
               </motion.div>
 
@@ -484,11 +489,11 @@ export default function ReportsPage() {
               </div>
             </motion.div>
 
-            {/* Top Cities */}
+            {/* Top Cities/Locations */}
             <motion.div variants={itemVariants} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
               <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-rose-500" />
-                <h4 className="font-bold text-sm text-slate-900 dark:text-white">Top Cities</h4>
+                <h4 className="font-bold text-sm text-slate-900 dark:text-white">Top {report.city_label || 'Locations'}</h4>
               </div>
               <div className="p-4 flex-1">
                 {report.top_cities && report.top_cities.length > 0 ? (

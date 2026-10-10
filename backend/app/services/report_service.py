@@ -74,11 +74,13 @@ def generate_report(dataset: Dataset, file_path: str) -> Dict[str, Any]:
     total_orders = analytics_data.get("totalOrders")
     total_quantity = analytics_data.get("totalQuantity")
     total_returns = analytics_data.get("totalReturns")
+    total_refunds = analytics_data.get("totalRefunds")
     average_order_value = analytics_data.get("averageOrderValue")
 
     top_products = analytics_data.get("top5Products") or []
     top_categories = analytics_data.get("top5Categories") or []
     top_cities = analytics_data.get("top5Cities") or []
+    city_label = analytics_data.get("cityLabel", "Cities")
 
     upload_date = dataset.uploaded_at.isoformat() if dataset.uploaded_at else None
 
@@ -95,10 +97,12 @@ def generate_report(dataset: Dataset, file_path: str) -> Dict[str, Any]:
         "total_orders": total_orders,
         "total_quantity": total_quantity,
         "total_returns": total_returns,
+        "total_refunds": total_refunds,
         "average_order_value": average_order_value,
         "top_products": top_products,
         "top_categories": top_categories,
         "top_cities": top_cities,
+        "city_label": city_label,
         "automated_insights": automated_insights,
 
         # Aliases for client compatibility
@@ -114,10 +118,12 @@ def generate_report(dataset: Dataset, file_path: str) -> Dict[str, Any]:
         "totalOrders": total_orders,
         "totalQuantity": total_quantity,
         "totalReturns": total_returns,
+        "totalRefunds": total_refunds,
         "averageOrderValue": average_order_value,
         "topProducts": top_products,
         "topCategories": top_categories,
         "topCities": top_cities,
+        "cityLabel": city_label,
         "automatedInsights": automated_insights,
     }
 
