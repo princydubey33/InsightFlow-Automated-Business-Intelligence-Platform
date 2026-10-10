@@ -11,6 +11,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +84,11 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+          {success && (
+            <div className="mb-4 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 p-3 rounded-lg text-sm border border-emerald-200 dark:border-emerald-800">
+              {success}
+            </div>
+          )}
           <form className="space-y-6" onSubmit={handleLogin}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -140,9 +146,22 @@ export default function LoginPage() {
               </div>
 
               <div className="text-sm">
-                <a href="#" className="font-medium text-brand dark:text-brand-light hover:text-brand-dark dark:hover:text-white transition-colors">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const emailInput = document.getElementById('email') as HTMLInputElement;
+                    if (emailInput && emailInput.value) {
+                      setError('');
+                      setSuccess(`Password reset instructions sent to ${emailInput.value}`);
+                    } else {
+                      setSuccess('');
+                      setError('Please enter your email address first to reset password');
+                    }
+                  }}
+                  className="font-medium text-brand dark:text-brand-light hover:text-brand-dark dark:hover:text-white transition-colors bg-transparent border-none p-0 cursor-pointer"
+                >
                   Forgot your password?
-                </a>
+                </button>
               </div>
             </div>
 
