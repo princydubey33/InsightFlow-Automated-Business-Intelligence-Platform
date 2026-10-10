@@ -76,33 +76,52 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
             if df[rev_col].dtype == object:
                 df[rev_col] = df[rev_col].astype(str).str.replace(r'[\$,]', '', regex=True)
             df[rev_col] = pd.to_numeric(df[rev_col], errors='coerce').fillna(0)
-            analytics["totalRevenue"] = float(df[rev_col].sum())
-        
-        # Calculate Orders
-        order_col = cols['orders']
-        if order_col:
-            analytics["totalOrders"] = int(df[order_col].nunique())
-        else:
-            analytics["totalOrders"] = len(df) # Fallback to number of rows
-
-        # Calculate AOV
-        if analytics["totalRevenue"] is not None and analytics["totalOrders"]:
-            analytics["averageOrderValue"] = analytics["totalRevenue"] / analytics["totalOrders"]
-
-        # Calculate Quantity
+            
         qty_col = cols['quantity']
         if qty_col:
             df[qty_col] = pd.to_numeric(df[qty_col], errors='coerce').fillna(0)
-            analytics["totalQuantity"] = float(df[qty_col].sum())
-
-        # Calculate Returns
+            
+        # 1. Deduplicate rows to prevent inflated metrics from data quality issues
+        df = df.drop_duplicates()
+        
+        # 2. Identify return/refund rows
+        is_return = pd.Series(False, index=df.index)
         ret_col = cols['returns']
+        
         if ret_col:
-            # Assuming returns might be boolean, string ('Yes'/'No'), or numeric
-            analytics["totalReturns"] = int(df[ret_col].notna().sum()) # simplistic approach, count non-null or positive values
-            # Alternatively, if it's a numeric sum of returned items or amount
             if pd.api.types.is_numeric_dtype(df[ret_col]):
-                analytics["totalReturns"] = float(df[ret_col].sum())
+                is_return = is_return | (df[ret_col] > 0)
+            else:
+                is_return = is_return | df[ret_col].astype(str).str.lower().isin(['yes', 'true', '1', 'y', 'refunded', 'returned'])
+                
+        if rev_col:
+            is_return = is_return | (df[rev_col] < 0)
+            
+        if qty_col:
+            is_return = is_return | (df[qty_col] < 0)
+            
+        # 3. Calculate KPIs
+        if rev_col:
+            # Gross revenue (only positive sales)
+            analytics["totalRevenue"] = float(df.loc[~is_return, rev_col].sum())
+        
+        if qty_col:
+            # Gross quantity
+            analytics["totalQuantity"] = float(df.loc[~is_return, qty_col].sum())
+            
+        order_col = cols['orders']
+        if order_col:
+            # Unique valid orders
+            analytics["totalOrders"] = int(df.loc[~is_return, order_col].nunique())
+        else:
+            analytics["totalOrders"] = int((~is_return).sum())
+            
+        analytics["totalReturns"] = int(is_return.sum())
+        
+        if analytics["totalRevenue"] is not None and analytics["totalOrders"]:
+            analytics["averageOrderValue"] = analytics["totalRevenue"] / analytics["totalOrders"]
+        else:
+            analytics["averageOrderValue"] = 0
 
         # Aggregations requiring Revenue
         if rev_col:
@@ -113,48 +132,54 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
                 df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
                 # Format to string date (YYYY-MM-DD) for grouping
                 df['__formatted_date'] = df[date_col].dt.strftime('%Y-%m-%d')
-                grouped_date = df.groupby('__formatted_date')[rev_col].sum().reset_index()
-                # Sort by date
+                
+                # Revenue by Date (Valid sales only)
+                valid_df = df[~is_return]
+                grouped_date = valid_df.groupby('__formatted_date')[rev_col].sum().reset_index()
                 grouped_date = grouped_date.sort_values('__formatted_date')
                 analytics["revenueByDate"] = [{"name": row['__formatted_date'], "value": row[rev_col]} for index, row in grouped_date.dropna().iterrows()]
 
-                # Calculate orders and returns by date
+                # Orders vs Returns by Date
                 orders_returns_data = []
                 for date_val, group in df.dropna(subset=['__formatted_date']).groupby('__formatted_date'):
-                    orders_count = int(group[order_col].nunique()) if order_col else len(group)
-                    returns_count = 0
-                    if ret_col:
-                        if pd.api.types.is_numeric_dtype(df[ret_col]):
-                            returns_count = float(group[ret_col].sum())
-                        else:
-                            returns_count = int(group[ret_col].notna().sum())
+                    group_is_return = is_return[group.index]
+                    
+                    if order_col:
+                        orders_count = int(group.loc[~group_is_return, order_col].nunique())
+                    else:
+                        orders_count = int((~group_is_return).sum())
+                        
+                    returns_count = int(group_is_return.sum())
+                    
                     orders_returns_data.append({
                         "name": str(date_val),
                         "orders": orders_count,
                         "returns": returns_count
                     })
+                
                 # Sort
                 orders_returns_data = sorted(orders_returns_data, key=lambda x: x["name"])
                 analytics["ordersVsReturnsByDate"] = orders_returns_data
 
-            # Product
+            # Product (Valid sales only)
+            valid_df = df[~is_return]
             prod_col = cols['product']
             if prod_col:
-                grouped_prod = df.groupby(prod_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
+                grouped_prod = valid_df.groupby(prod_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
                 analytics["revenueByProduct"] = [{"name": str(row[prod_col]), "value": row[rev_col]} for index, row in grouped_prod.iterrows()]
                 analytics["top5Products"] = analytics["revenueByProduct"][:5]
 
             # Category
             cat_col = cols['category']
             if cat_col:
-                grouped_cat = df.groupby(cat_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
+                grouped_cat = valid_df.groupby(cat_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
                 analytics["revenueByCategory"] = [{"name": str(row[cat_col]), "value": row[rev_col]} for index, row in grouped_cat.iterrows()]
                 analytics["top5Categories"] = analytics["revenueByCategory"][:5]
 
             # City
             city_col = cols['city']
             if city_col:
-                grouped_city = df.groupby(city_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
+                grouped_city = valid_df.groupby(city_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
                 analytics["revenueByCity"] = [{"name": str(row[city_col]), "value": row[rev_col]} for index, row in grouped_city.iterrows()]
                 analytics["top5Cities"] = analytics["revenueByCity"][:5]
 
