@@ -4,6 +4,7 @@ import { ShieldCheck, AlertTriangle, ShieldAlert, CheckCircle, Info, Database, H
 import { motion } from 'framer-motion';
 import AnimatedCount from '../components/AnimatedCount';
 import { API_BASE_URL } from '../config';
+import { authFetch } from '../utils/api';
 
 const container: any = {
   hidden: { opacity: 0 },
@@ -34,7 +35,7 @@ export default function DataQualityPage() {
 
         if (!datasetId) {
           // Fetch latest dataset if no ID provided in state
-          const datasetsResponse = await fetch(`${API_BASE_URL}/api/datasets`);
+          const datasetsResponse = await authFetch(`${API_BASE_URL}/api/datasets`);
           if (!datasetsResponse.ok) throw new Error('Failed to fetch datasets');
           const datasets = await datasetsResponse.json();
           if (datasets.length > 0) {
@@ -46,7 +47,7 @@ export default function DataQualityPage() {
           }
         }
 
-        const qualityResponse = await fetch(`${API_BASE_URL}/api/datasets/${datasetId}/quality`);
+        const qualityResponse = await authFetch(`${API_BASE_URL}/api/datasets/${datasetId}/quality`);
         if (!qualityResponse.ok) throw new Error('Failed to fetch quality data. Ensure the dataset has been processed.');
         const data = await qualityResponse.json();
         setQualityData(data);
@@ -67,7 +68,7 @@ export default function DataQualityPage() {
       setFixingIssueId(issue.id);
       setFixMessage(null);
       
-      const response = await fetch(`${API_BASE_URL}/api/datasets/${currentDatasetId}/fix`, {
+      const response = await authFetch(`${API_BASE_URL}/api/datasets/${currentDatasetId}/fix`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,7 +86,7 @@ export default function DataQualityPage() {
       setFixMessage({ type: 'success', text: `Successfully fixed: ${issue.type}` });
       
       // Refresh data
-      const qualityResponse = await fetch(`${API_BASE_URL}/api/datasets/${currentDatasetId}/quality`);
+      const qualityResponse = await authFetch(`${API_BASE_URL}/api/datasets/${currentDatasetId}/quality`);
       if (qualityResponse.ok) {
         const data = await qualityResponse.json();
         setQualityData(data);

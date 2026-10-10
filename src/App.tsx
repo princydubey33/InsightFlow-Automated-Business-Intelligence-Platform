@@ -10,6 +10,7 @@ import DataQualityPage from './pages/DataQualityPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import InsightsPage from './pages/InsightsPage';
 import ReportsPage from './pages/ReportsPage';
+import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
@@ -46,6 +47,7 @@ function AnimatedRoutes() {
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="insights" element={<InsightsPage />} />
           <Route path="reports" element={<ReportsPage />} />
+          <Route path="history" element={<HistoryPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

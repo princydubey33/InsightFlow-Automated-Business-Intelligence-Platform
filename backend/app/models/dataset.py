@@ -14,3 +14,4 @@ class Dataset(Base):
     row_count = Column(Integer, nullable=True)
     column_count = Column(Integer, nullable=True)
     status = Column(String, default="uploaded")
+    user_id = Column(Integer, nullable=True) # Adding user_id for isolation

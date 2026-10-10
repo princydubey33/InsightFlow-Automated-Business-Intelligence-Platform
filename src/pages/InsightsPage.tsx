@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../config';
+import { authFetch } from '../utils/api';
 
 interface InsightItem {
   id?: string | number;
@@ -122,7 +123,7 @@ export default function InsightsPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`${API_BASE_URL}/api/datasets/${datasetId}/insights`);
+      const res = await authFetch(`${API_BASE_URL}/api/datasets/${datasetId}/insights`);
       if (!res.ok) {
         throw new Error(`Failed to fetch insights (Status: ${res.status})`);
       }
@@ -142,7 +143,7 @@ export default function InsightsPage() {
       setError(null);
 
       // 1. Fetch available datasets
-      const dsRes = await fetch(`${API_BASE_URL}/api/datasets`);
+      const dsRes = await authFetch(`${API_BASE_URL}/api/datasets`);
       if (!dsRes.ok) throw new Error('Failed to fetch datasets list');
       const dsList: Dataset[] = await dsRes.json();
       setDatasets(dsList);
@@ -207,7 +208,7 @@ export default function InsightsPage() {
     setIsTyping(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/datasets/${selectedDatasetId}/ask`, {
+      const res = await authFetch(`${API_BASE_URL}/api/datasets/${selectedDatasetId}/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

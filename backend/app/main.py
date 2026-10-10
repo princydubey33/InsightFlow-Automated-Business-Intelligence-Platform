@@ -10,12 +10,17 @@ from .config import settings
 from .database import engine, Base, get_db
 from .models import dataset as dataset_models
 from .models import user as user_models
-from .routes import datasets, auth
+from .models import activity as activity_models
+from .routes import datasets, auth, activity
 from .schemas.dataset import DatasetResponse
 from .services.dataset_service import analyze_file
+from .services.activity_service import log_activity
+from typing import Optional
+from fastapi import Header
 
 user_models.Base.metadata.create_all(bind=engine)
 dataset_models.Base.metadata.create_all(bind=engine)
+activity_models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name)
 
@@ -45,7 +50,11 @@ ALLOWED_TYPES = [
 ]
 
 @app.post("/api/upload", response_model=DatasetResponse)
-async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_dataset(
+    file: UploadFile = File(...), 
+    db: Session = Depends(get_db),
+    x_user_id: Optional[str] = Header(None)
+):
     if file.content_type not in ALLOWED_TYPES and not file.filename.endswith(('.csv', '.xls', '.xlsx')):
         raise HTTPException(status_code=400, detail="Invalid file type. Only CSV and Excel files are allowed.")
     
@@ -64,6 +73,8 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
     
     row_count, column_count = analyze_file(file_path, file.content_type)
     
+    user_id = int(x_user_id) if x_user_id and x_user_id.isdigit() else None
+    
     db_dataset = dataset_models.Dataset(
         filename=saved_filename,
         original_filename=file.filename,
@@ -71,14 +82,26 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
         file_size=file_size,
         row_count=row_count,
         column_count=column_count,
-        status="processed"
+        status="processed",
+        user_id=user_id
     )
     
     db.add(db_dataset)
     db.commit()
     db.refresh(db_dataset)
     
+    log_activity(
+        db=db,
+        user_id=user_id,
+        dataset_id=db_dataset.id,
+        dataset_filename=db_dataset.original_filename,
+        activity_type="Upload",
+        status="success",
+        summary_metrics={"row_count": row_count, "column_count": column_count, "file_size": file_size}
+    )
+    
     return db_dataset
 
 app.include_router(datasets.router)
 app.include_router(auth.router)
+app.include_router(activity.router)

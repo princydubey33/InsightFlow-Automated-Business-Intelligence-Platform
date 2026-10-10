@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import AnimatedCount from '../components/AnimatedCount';
 import { useLocation } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
+import { authFetch } from '../utils/api';
 
 const COLORS = ['#6366f1', '#14b8a6', '#f59e0b', '#f43f5e'];
 
@@ -46,7 +47,7 @@ export default function DashboardOverview() {
         let datasetId = location.state?.datasetId;
 
         if (!datasetId) {
-          const datasetsResponse = await fetch(`${API_BASE_URL}/api/datasets`);
+          const datasetsResponse = await authFetch(`${API_BASE_URL}/api/datasets`);
           if (!datasetsResponse.ok) throw new Error('Failed to fetch datasets');
           const datasets = await datasetsResponse.json();
           if (datasets.length > 0) {
@@ -58,7 +59,7 @@ export default function DashboardOverview() {
           }
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/datasets/${datasetId}/analytics`);
+        const response = await authFetch(`${API_BASE_URL}/api/datasets/${datasetId}/analytics`);
         if (!response.ok) throw new Error('Failed to fetch analytics data.');
         const data = await response.json();
         setAnalyticsData(data);

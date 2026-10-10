@@ -15,7 +15,8 @@ import {
   Menu,
   X,
   LogOut,
-  Check
+  Check,
+  History
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -29,6 +30,7 @@ const navItems = [
   { name: 'Analytics', path: '/app/analytics', icon: BarChart3 },
   { name: 'Insights', path: '/app/insights', icon: Lightbulb },
   { name: 'Reports', path: '/app/reports', icon: FileText },
+  { name: 'History', path: '/app/history', icon: History },
   { name: 'Settings', path: '/app/settings', icon: Settings },
 ];
 
@@ -39,6 +41,7 @@ const searchItems = [
   { name: 'Analytics', path: '/app/analytics', type: 'Page' },
   { name: 'Insights', path: '/app/insights', type: 'Page' },
   { name: 'Reports', path: '/app/reports', type: 'Page' },
+  { name: 'History', path: '/app/history', type: 'Page' },
   { name: 'Settings', path: '/app/settings', type: 'Page' },
 ];
 

@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { Loader2, AlertTriangle, DollarSign, ShoppingCart, Hash, RefreshCcw, TrendingUp } from 'lucide-react';
 import AnimatedCount from '../components/AnimatedCount';
 import { API_BASE_URL } from '../config';
+import { authFetch } from '../utils/api';
 
 const container: any = {
   hidden: { opacity: 0 },
@@ -41,7 +42,7 @@ export default function AnalyticsPage() {
         let datasetId = location.state?.datasetId;
 
         if (!datasetId) {
-          const datasetsResponse = await fetch(`${API_BASE_URL}/api/datasets`);
+          const datasetsResponse = await authFetch(`${API_BASE_URL}/api/datasets`);
           if (!datasetsResponse.ok) throw new Error('Failed to fetch datasets');
           const datasets = await datasetsResponse.json();
           if (datasets.length > 0) {
@@ -53,7 +54,7 @@ export default function AnalyticsPage() {
           }
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/datasets/${datasetId}/analytics`);
+        const response = await authFetch(`${API_BASE_URL}/api/datasets/${datasetId}/analytics`);
         if (!response.ok) throw new Error('Failed to fetch analytics data.');
         const data = await response.json();
         setAnalyticsData(data);

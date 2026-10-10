@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { API_BASE_URL } from '../config';
+import { authFetch } from '../utils/api';
 
 interface TopItem {
   name: string;
@@ -93,7 +94,7 @@ export default function ReportsPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`${API_BASE_URL}/api/datasets/${datasetId}/report`);
+      const res = await authFetch(`${API_BASE_URL}/api/datasets/${datasetId}/report`);
       if (!res.ok) {
         throw new Error(`Failed to load report (HTTP ${res.status})`);
       }
@@ -113,7 +114,7 @@ export default function ReportsPage() {
       setError(null);
 
       // 1. Fetch available datasets
-      const dsRes = await fetch(`${API_BASE_URL}/api/datasets`);
+      const dsRes = await authFetch(`${API_BASE_URL}/api/datasets`);
       if (!dsRes.ok) throw new Error('Failed to fetch datasets');
       const dsList: Dataset[] = await dsRes.json();
       setDatasets(dsList);

@@ -3,6 +3,7 @@ import { UploadCloud, FileSpreadsheet, CheckCircle2, Search, Database, BarChart,
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE_URL } from '../config';
+import { authFetch } from '../utils/api';
 
 const steps = [
   { name: 'Uploading', icon: UploadCloud },
@@ -62,7 +63,7 @@ export default function UploadDataPage() {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const response = await fetch(`${API_BASE_URL}/api/upload`, {
+      const response = await authFetch(`${API_BASE_URL}/api/upload`, {
         method: 'POST',
         body: formData,
       });
