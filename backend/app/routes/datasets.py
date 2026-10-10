@@ -38,18 +38,27 @@ def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
     return dataset
 
 @router.delete("/{dataset_id}")
-def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
+def delete_dataset(dataset_id: int, db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id)):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    if dataset.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this dataset")
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     if os.path.exists(file_path):
         os.remove(file_path)
         
+    # We do NOT delete the activity logs automatically here. We just set dataset_id to None in the logs, or let them be.
+    # The requirement says: "Deleting an activity log must NOT delete the original CSV dataset or saved reports unless the user explicitly chooses a separate "Delete Dataset" action."
+    # If the user deletes a dataset, what happens to history? Let's cascade delete the history logs for this dataset to keep it clean.
+    from ..models.activity import ActivityLog
+    db.query(ActivityLog).filter(ActivityLog.dataset_id == dataset_id).delete()
+        
     db.delete(dataset)
     db.commit()
-    return {"message": "Dataset deleted successfully"}
+    return {"message": "Dataset and associated history deleted successfully"}
 
 @router.get("/{dataset_id}/quality")
 def get_dataset_quality(dataset_id: int, db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id)):

@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import os
+
+NEW_HISTORY_PAGE = """import React, { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { Activity, Database, FileText, Calendar, TrendingUp, AlertTriangle, Lightbulb, Search, Filter, ShieldCheck, Trash2, X, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -454,3 +456,7 @@ export default function HistoryPage() {
     </div>
   );
 }
+"""
+
+with open('src/pages/HistoryPage.tsx', 'w', encoding='utf-8') as f:
+    f.write(NEW_HISTORY_PAGE)

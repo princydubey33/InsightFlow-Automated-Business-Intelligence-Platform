@@ -37,3 +37,32 @@ def get_dataset_history(
         query = query.filter(Dataset.user_id == user_id)
         
     return query.order_by(Dataset.uploaded_at.desc()).all()
+
+@router.delete("/activities/{activity_id}")
+def delete_activity_log(
+    activity_id: int, 
+    db: Session = Depends(get_db), 
+    user_id: Optional[int] = Depends(get_current_user_id)
+):
+    activity = db.query(ActivityLog).filter(ActivityLog.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity log not found")
+        
+    if activity.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this record")
+        
+    db.delete(activity)
+    db.commit()
+    return {"message": "Activity log deleted successfully"}
+
+@router.delete("/activities")
+def clear_activity_history(
+    db: Session = Depends(get_db), 
+    user_id: Optional[int] = Depends(get_current_user_id)
+):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+        
+    db.query(ActivityLog).filter(ActivityLog.user_id == user_id).delete()
+    db.commit()
+    return {"message": "All activity history cleared successfully"}
