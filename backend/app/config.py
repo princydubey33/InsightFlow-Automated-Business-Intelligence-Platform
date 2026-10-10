@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     ai_model: str = os.getenv("AI_MODEL", "")
-    cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173")
+    cors_origins: str = os.getenv("CORS_ORIGINS", "https://insightflow-automated-business-intelligence-platform.vercel.app,http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173")
     
     class Config:
         env_file = ".env"
