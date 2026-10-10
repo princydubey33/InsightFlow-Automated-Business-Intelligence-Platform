@@ -1,20 +1,29 @@
 import os
 import json
 import re
+import sys
+import io
+import traceback
 from typing import Dict, Any, List, Optional
 import httpx
+import pandas as pd
 
 from .analytics_service import generate_analytics
 from .insights_service import generate_insights
 from ..models.dataset import Dataset
 from ..config import settings
 
-def build_compact_context(dataset: Dataset, file_path: str) -> Dict[str, Any]:
-    """
-    Builds a compact, summarized business context from Analytics,
-    Data Quality, and Insights services without sending raw tabular rows.
-    """
-    # 1. Quality report
+def load_dataframe(file_path: str, file_type: str) -> Optional[pd.DataFrame]:
+    try:
+        if file_type == 'text/csv' or file_path.endswith('.csv'):
+            return pd.read_csv(file_path)
+        elif file_type in ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] or file_path.endswith(('.xls', '.xlsx')):
+            return pd.read_excel(file_path)
+    except Exception:
+        pass
+    return None
+
+def build_rich_context(dataset: Dataset, file_path: str) -> str:
     quality_report_path = f"{file_path}.quality.json"
     quality_data = {}
     if os.path.exists(quality_report_path):
@@ -22,323 +31,169 @@ def build_compact_context(dataset: Dataset, file_path: str) -> Dict[str, Any]:
             with open(quality_report_path, "r", encoding="utf-8") as f:
                 quality_data = json.load(f)
         except Exception:
-            quality_data = {}
+            pass
 
-    # 2. Analytics
     analytics_data = generate_analytics(file_path, dataset.file_type)
     if not isinstance(analytics_data, dict) or "error" in analytics_data:
         analytics_data = {}
 
-    # 3. Insights
-    try:
-        insights = generate_insights(file_path, dataset.file_type)
-        if not isinstance(insights, list):
-            insights = []
-    except Exception:
-        insights = []
-
-    # Safe metrics
-    total_rows = quality_data.get("total_rows", dataset.row_count)
-    total_columns = quality_data.get("total_columns", dataset.column_count)
-    quality_score = quality_data.get("quality_score")
-    missing_values = quality_data.get("missing_values")
-    duplicate_rows = quality_data.get("duplicate_rows")
-
-    total_revenue = analytics_data.get("totalRevenue")
-    total_orders = analytics_data.get("totalOrders")
-    total_quantity = analytics_data.get("totalQuantity")
-    total_returns = analytics_data.get("totalReturns")
-    average_order_value = analytics_data.get("averageOrderValue")
-
-    top_products = analytics_data.get("top5Products") or []
-    top_categories = analytics_data.get("top5Categories") or []
-    top_cities = analytics_data.get("top5Cities") or []
-    revenue_by_date = analytics_data.get("revenueByDate") or []
-
-    return {
+    summary = {
         "dataset_name": dataset.original_filename,
-        "total_rows": total_rows,
-        "total_columns": total_columns,
-        "quality_score": quality_score,
-        "missing_values": missing_values,
-        "duplicate_rows": duplicate_rows,
-        "total_revenue": total_revenue,
-        "total_orders": total_orders,
-        "total_quantity": total_quantity,
-        "total_returns": total_returns,
-        "average_order_value": average_order_value,
-        "top_products": top_products,
-        "top_categories": top_categories,
-        "top_cities": top_cities,
-        "revenue_by_date": revenue_by_date,
-        "automated_insights": insights,
+        "total_rows": quality_data.get("total_rows", dataset.row_count),
+        "total_columns": quality_data.get("total_columns", dataset.column_count),
+        "columns": quality_data.get("column_summary", []),
+        "identified_issues": quality_data.get("identified_issues", []),
+        "total_revenue": analytics_data.get("totalRevenue"),
+        "total_orders": analytics_data.get("totalOrders"),
+        "average_order_value": analytics_data.get("averageOrderValue"),
+        "return_count": analytics_data.get("totalReturns"),
     }
+    return json.dumps(summary, indent=2, default=str)
 
-def _query_external_llm(question: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Attempts to answer the question using configured external LLM provider.
-    Returns None if no provider is configured or if the external call fails.
-    """
-    openai_key = os.getenv("OPENAI_API_KEY", getattr(settings, "openai_api_key", ""))
-    gemini_key = os.getenv("GEMINI_API_KEY", getattr(settings, "gemini_api_key", ""))
-    groq_key = os.getenv("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
+def execute_pandas_code(code: str, df: pd.DataFrame) -> str:
+    local_vars = {'df': df, 'pd': pd}
+    old_stdout = sys.stdout
+    redirected_output = sys.stdout = io.StringIO()
+    try:
+        # Basic sandbox to execute pandas code safely
+        exec(code, {'__builtins__': __builtins__}, local_vars)
+        output = redirected_output.getvalue()
+        if not output.strip():
+            return "Code executed successfully but printed nothing. Make sure to print the result."
+        return output.strip()
+    except Exception as e:
+        return f"Error executing code: {str(e)}"
+    finally:
+        sys.stdout = old_stdout
 
-    system_prompt = (
-        "You are InsightFlow AI, an executive business intelligence assistant. "
-        "Answer the user's question using ONLY the provided business summary context. "
-        "If a metric is unavailable or the question cannot be answered from this dataset summary, "
-        "explicitly state: 'This question cannot be answered from the uploaded dataset.' "
-        "Never invent numbers or assume external statistics."
-    )
-
-    context_str = json.dumps(context, indent=2, default=str)
-    user_prompt = f"Dataset Summary:\n{context_str}\n\nQuestion: {question}"
-
-    # 1. OpenAI or Groq
-    api_key = openai_key or groq_key
-    if api_key:
-        api_url = "https://api.openai.com/v1/chat/completions" if openai_key else "https://api.groq.com/openai/v1/chat/completions"
-        model = os.getenv("AI_MODEL") or ("gpt-4o-mini" if openai_key else "llama-3.1-8b-instant")
-        try:
-            with httpx.Client(timeout=15.0) as client:
-                res = client.post(
-                    api_url,
-                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.2
-                    }
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    answer = data["choices"][0]["message"]["content"].strip()
-                    return {
-                        "answer": answer,
-                        "sources": ["Configured LLM", f"Dataset: {context['dataset_name']}"]
-                    }
-        except Exception:
-            pass
-
-    # 2. Gemini
-    if gemini_key:
+def _call_llm_api(messages: List[Dict[str, str]], api_key: str, is_openai_format: bool) -> str:
+    if is_openai_format:
+        api_url = "https://api.openai.com/v1/chat/completions" if api_key.startswith("sk-") and "groq" not in api_key.lower() else "https://api.groq.com/openai/v1/chat/completions"
+        model = os.getenv("AI_MODEL") or ("gpt-4o-mini" if "api.openai.com" in api_url else "llama-3.1-8b-instant")
+        
+        with httpx.Client(timeout=30.0) as client:
+            res = client.post(
+                api_url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "temperature": 0.1}
+            )
+            if res.status_code == 200:
+                return res.json()["choices"][0]["message"]["content"].strip()
+            else:
+                raise Exception(f"Provider Error: {res.text}")
+    else:
+        # Gemini format
         model = os.getenv("AI_MODEL", "gemini-1.5-flash")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
-        try:
-            with httpx.Client(timeout=15.0) as client:
-                res = client.post(
-                    url,
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "contents": [
-                            {"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}
-                        ],
-                        "generationConfig": {"temperature": 0.2}
-                    }
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    answer = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    return {
-                        "answer": answer,
-                        "sources": ["Gemini AI", f"Dataset: {context['dataset_name']}"]
-                    }
-        except Exception:
-            pass
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        
+        gemini_messages = []
+        for msg in messages:
+            role = "user" if msg["role"] in ["user", "system"] else "model"
+            gemini_messages.append({"role": role, "parts": [{"text": msg["content"]}]})
+            
+        with httpx.Client(timeout=30.0) as client:
+            res = client.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json={"contents": gemini_messages, "generationConfig": {"temperature": 0.1}}
+            )
+            if res.status_code == 200:
+                return res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            else:
+                raise Exception(f"Gemini Error: {res.text}")
 
-    return None
-
-def answer_dataset_question(question: str, dataset: Dataset, file_path: str) -> Dict[str, Any]:
-    """
-    Answers questions about the uploaded dataset using compact business context,
-    relying on configured LLM when available, and falling back to a deterministic
-    domain-specific BI analytical engine.
-    """
+def answer_dataset_question(question: str, dataset: Dataset, file_path: str, history: List[Dict[str, str]] = None) -> Dict[str, Any]:
     q_clean = question.strip()
     if not q_clean:
         raise ValueError("Question cannot be empty")
 
-    context = build_compact_context(dataset, file_path)
+    openai_key = os.getenv("OPENAI_API_KEY", getattr(settings, "openai_api_key", ""))
+    gemini_key = os.getenv("GEMINI_API_KEY", getattr(settings, "gemini_api_key", ""))
+    groq_key = os.getenv("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
 
-    # 1. Try external LLM if configured
-    llm_result = _query_external_llm(q_clean, context)
-    if llm_result:
+    api_key = openai_key or groq_key or gemini_key
+    if not api_key:
         return {
-            "answer": llm_result["answer"],
-            "sources": llm_result["sources"],
+            "answer": "AI Provider is not configured. Please set GEMINI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY in the backend environment variables.",
+            "sources": ["System Configuration Error"],
+            "dataset_id": dataset.id
+        }
+        
+    is_openai_format = bool(openai_key or groq_key)
+
+    df = load_dataframe(file_path, dataset.file_type)
+    if df is None:
+        return {
+            "answer": "I could not load the dataset file to perform calculations.",
+            "sources": ["System Error"],
             "dataset_id": dataset.id
         }
 
-    # 2. High-precision semantic BI engine
-    q_lower = q_clean.lower()
-    sources = []
-    answer = ""
+    context_str = build_rich_context(dataset, file_path)
 
-    rev = context.get("total_revenue")
-    orders = context.get("total_orders")
-    aov = context.get("average_order_value")
-    returns = context.get("total_returns")
-    top_prods = context.get("top_products") or []
-    top_cats = context.get("top_categories") or []
-    top_cities = context.get("top_cities") or []
-    q_score = context.get("quality_score")
-    missing_vals = context.get("missing_values")
-    dup_rows = context.get("duplicate_rows")
-    insights = context.get("automated_insights") or []
+    system_prompt = f"""You are InsightFlow AI, a brilliant data analyst assistant.
+You have access to a pandas DataFrame named `df` representing the user's dataset: '{dataset.original_filename}'.
 
-    # Question matching rules
-    # A. Highest revenue product / top product
-    if any(k in q_lower for k in [
-        "product has the highest revenue", "which product", "highest revenue product", 
-        "top product", "best selling product", "highest selling product", "product generated"
-    ]):
-        if top_prods:
-            best = top_prods[0]
-            answer = f"The product generating the highest revenue is '{best['name']}' with ₹{best['value']:,.2f} in sales."
-            if len(top_prods) > 1:
-                others = ", ".join([f"{p['name']} (₹{p['value']:,.2f})" for p in top_prods[1:4]])
-                answer += f" Followed by {others}."
-            sources = ["Analytics - Top Products", "Dataset Rankings"]
-        else:
-            answer = "Product-level breakdown is not available in the columns of this dataset."
-            sources = ["Dataset Schema"]
+DATASET SUMMARY:
+{context_str}
 
-    # B. Best city / location
-    elif any(k in q_lower for k in [
-        "city performs best", "which city", "top city", "best performing city", "best city", "highest city"
-    ]):
-        if top_cities:
-            best = top_cities[0]
-            answer = f"The best performing city is '{best['name']}' with total revenue of ₹{best['value']:,.2f}."
-            if len(top_cities) > 1:
-                others = ", ".join([f"{c['name']} (₹{c['value']:,.2f})" for c in top_cities[1:3]])
-                answer += f" Additional top locations include {others}."
-            sources = ["Analytics - Top Cities by Revenue"]
-        else:
-            answer = "City or geographic location data is not available in this dataset."
-            sources = ["Dataset Schema"]
+INSTRUCTIONS:
+1. You can chat normally and fluently in English, Hindi, or Hinglish.
+2. If the user asks a conversational question, answer it directly.
+3. If the user asks a question about the data that requires calculation (like row counts, averages, correlations, finding missing values, duplicate checks, sorting, etc.), you MUST write Python code to calculate the answer exactly. 
+4. To run code, output a block starting EXACTLY with ```python and ending with ```. You must PRINT the final answer (e.g., `print(result)`).
+5. The system will run your python code on the `df` dataframe and give you the output.
+6. Once you get the output, explain the result clearly to the user.
+7. Do NOT invent or guess calculations. If you need a calculation, write the python code.
 
-    # C. Return rate
-    elif any(k in q_lower for k in ["return rate", "returns", "refund rate", "how many returns"]):
-        if returns is not None and orders:
-            ret_pct = (returns / orders) * 100 if orders > 0 else 0
-            answer = f"The return rate is {ret_pct:.1f}% ({returns} returned units out of {orders} orders)."
-            # Check if there is an insight for highest return product
-            ret_insight = next((i for i in insights if "return" in i.get("title", "").lower()), None)
-            if ret_insight:
-                answer += f" {ret_insight.get('description', '')} ({ret_insight.get('value', '')})."
-                if ret_insight.get("recommendation"):
-                    answer += f" Recommendation: {ret_insight.get('recommendation')}"
-            sources = ["Analytics - Returns", "Automated Insights - Return Rate"]
-        else:
-            answer = "Return or refund metrics were not found in this dataset."
-            sources = ["Analytics Service"]
+Example:
+User: How many missing values are in the Age column?
+Assistant: Let me check that for you.
+```python
+print(df['Age'].isna().sum())
+```
+System Output: 5
+Assistant: There are 5 missing values in the Age column.
+"""
 
-    # D. Total revenue
-    elif any(k in q_lower for k in [
-        "total revenue", "what is the revenue", "how much revenue", "total sales", "overall revenue"
-    ]):
-        if rev is not None:
-            answer = f"The total revenue for dataset '{dataset.original_filename}' is ₹{rev:,.2f} across {orders or 'all'} orders."
-            if aov is not None:
-                answer += f" The average order value (AOV) is ₹{aov:,.2f}."
-            sources = ["Analytics - Total Revenue", "Analytics - Average Order Value"]
-        else:
-            answer = "Total revenue could not be calculated because a numeric revenue/sales column was not identified."
-            sources = ["Analytics Service"]
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    if history:
+        for msg in history:
+            messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+            
+    messages.append({"role": "user", "content": q_clean})
 
-    # E. Total orders / Average order value
-    elif any(k in q_lower for k in ["total orders", "how many orders", "order count"]):
-        if orders is not None:
-            answer = f"There are {orders:,} unique orders in this dataset."
-            sources = ["Analytics - Total Orders"]
-        else:
-            answer = "Order count is not available in this dataset."
-            sources = ["Analytics Service"]
-
-    elif any(k in q_lower for k in ["average order value", "aov"]):
-        if aov is not None:
-            answer = f"The average order value (AOV) is ₹{aov:,.2f}."
-            sources = ["Analytics - Average Order Value"]
-        else:
-            answer = "Average order value is not available for this dataset."
-            sources = ["Analytics Service"]
-
-    # F. Why might revenue be changing / revenue high / drivers
-    elif any(k in q_lower for k in [
-        "why might revenue be changing", "why is revenue changing", "why is revenue high", 
-        "why is revenue low", "revenue trend", "why revenue"
-    ]):
-        trend_insight = next((i for i in insights if "trend" in i.get("type", "").lower() or "revenue trend" in i.get("title", "").lower()), None)
-        drivers = []
-        if top_cats:
-            drivers.append(f"dominant sales in '{top_cats[0]['name']}' (₹{top_cats[0]['value']:,.2f})")
-        if top_prods:
-            drivers.append(f"strong performance from '{top_prods[0]['name']}' (₹{top_prods[0]['value']:,.2f})")
-
-        reasons = ", combined with ".join(drivers) if drivers else "recorded transaction volumes"
-        if trend_insight:
-            answer = f"Revenue shows a {trend_insight.get('value', 'dynamic')} pattern ({trend_insight.get('description', '')}). Key growth is anchored by {reasons}."
-            if trend_insight.get("recommendation"):
-                answer += f" Suggested strategy: {trend_insight.get('recommendation')}"
-        else:
-            answer = f"Revenue performance is primarily driven by {reasons} across {orders or 'multiple'} orders."
-        sources = ["Analytics - Revenue Distribution", "Automated Insights"]
-
-    # G. Recommendations / What should I improve
-    elif any(k in q_lower for k in [
-        "what should i improve", "recommendation", "what to improve", "how to improve", "suggestions", "next steps"
-    ]):
-        recs = [f"- {i['title']}: {i['recommendation']}" for i in insights if i.get("recommendation")]
-        if recs:
-            answer = "Based on automated intelligence from your dataset, here are the key areas to improve:\n" + "\n".join(recs)
-            sources = ["Automated Insights - Actionable Recommendations"]
-        else:
-            answer = "No immediate warnings were detected. Monitor top product stock levels and maintain current marketing allocations."
-            sources = ["Automated Insights"]
-
-    # H. Data quality issues / health
-    elif any(k in q_lower for k in [
-        "data quality", "quality issues", "missing values", "duplicate", "clean", "explain my data quality"
-    ]):
-        parts = []
-        if q_score is not None:
-            parts.append(f"Overall Data Quality Score is {q_score}%.")
-        if missing_vals is not None:
-            parts.append(f"{missing_vals} empty/missing cell(s) detected.")
-        if dup_rows is not None:
-            parts.append(f"{dup_rows} duplicate row(s) identified.")
-        
-        answer = " ".join(parts) if parts else "Data quality metrics are within normal thresholds."
-        sources = ["Data Quality Profile", "Data Quality Service"]
-
-    # I. Top Categories
-    elif any(k in q_lower for k in ["category", "categories"]):
-        if top_cats:
-            best = top_cats[0]
-            answer = f"The top performing category is '{best['name']}' with ₹{best['value']:,.2f} in revenue."
-            if len(top_cats) > 1:
-                others = ", ".join([f"{c['name']} (₹{c['value']:,.2f})" for c in top_cats[1:]])
-                answer += f" Other categories include: {others}."
-            sources = ["Analytics - Top Categories"]
-        else:
-            answer = "Category information is not available in this dataset."
-            sources = ["Dataset Schema"]
-
-    # J. Unrelated or unanswerable
-    else:
-        answer = (
-            f"This question cannot be answered from the uploaded dataset '{dataset.original_filename}'. "
-            "Available metrics include total revenue, total orders, average order value, top products, "
-            "top categories, top cities, return rates, and data quality scores."
-        )
-        sources = []
-
-    return {
-        "answer": answer,
-        "sources": sources,
-        "dataset_id": dataset.id
-    }
+    try:
+        # ReAct Loop (max 3 iterations)
+        for _ in range(3):
+            response_text = _call_llm_api(messages, api_key, is_openai_format)
+            messages.append({"role": "assistant", "content": response_text})
+            
+            # Check if model wants to run python
+            code_match = re.search(r'```python\n(.*?)\n```', response_text, re.DOTALL)
+            if code_match:
+                code = code_match.group(1)
+                execution_output = execute_pandas_code(code, df)
+                # Feed output back to model
+                messages.append({"role": "user", "content": f"System Output:\n{execution_output}\n\nNow provide the final answer to the user based on this output."})
+            else:
+                # No code to run, we have the final answer
+                return {
+                    "answer": response_text,
+                    "sources": ["InsightFlow AI", "Python/Pandas Execution"] if _ > 0 else ["InsightFlow AI"],
+                    "dataset_id": dataset.id
+                }
+                
+        # If loop exhausts
+        return {
+            "answer": messages[-1]["content"],
+            "sources": ["InsightFlow AI (Loop Exceeded)"],
+            "dataset_id": dataset.id
+        }
+    except Exception as e:
+        return {
+            "answer": f"I encountered an error connecting to the AI provider. Please ensure your API keys are valid and the provider is online.\nError details: {str(e)}",
+            "sources": ["AI Provider Error"],
+            "dataset_id": dataset.id
+        }

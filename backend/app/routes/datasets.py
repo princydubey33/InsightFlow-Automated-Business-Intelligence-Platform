@@ -127,7 +127,8 @@ def ask_dataset_question(dataset_id: int, request: AskQuestionRequest, db: Sessi
         raise HTTPException(status_code=404, detail="Dataset file not found")
         
     try:
-        result = answer_dataset_question(request.question, dataset, file_path)
+        history_dicts = [{"role": msg.role, "content": msg.content} for msg in request.history] if request.history else []
+        result = answer_dataset_question(request.question, dataset, file_path, history_dicts)
         return result
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

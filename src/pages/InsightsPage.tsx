@@ -212,7 +212,13 @@ export default function InsightsPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ question: userQuestion }),
+        body: JSON.stringify({ 
+          question: userQuestion,
+          history: chat.map(msg => ({
+            role: msg.role === 'ai' ? 'assistant' : 'user',
+            content: msg.text
+          }))
+        }),
       });
 
       if (!res.ok) {
