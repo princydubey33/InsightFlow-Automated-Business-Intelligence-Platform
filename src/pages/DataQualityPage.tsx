@@ -23,7 +23,9 @@ export default function DataQualityPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qualityData, setQualityData] = useState<any>(null);
-
+  const [currentDatasetId, setCurrentDatasetId] = useState<number | null>(null);
+  const [fixingIssueId, setFixingIssueId] = useState<string | null>(null);
+  const [fixMessage, setFixMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
   useEffect(() => {
     const fetchQualityData = async () => {
       try {
@@ -48,6 +50,7 @@ export default function DataQualityPage() {
         if (!qualityResponse.ok) throw new Error('Failed to fetch quality data. Ensure the dataset has been processed.');
         const data = await qualityResponse.json();
         setQualityData(data);
+        setCurrentDatasetId(datasetId);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -57,6 +60,42 @@ export default function DataQualityPage() {
 
     fetchQualityData();
   }, [location.state]);
+
+  const handleApplyFix = async (issue: any) => {
+    if (!currentDatasetId) return;
+    try {
+      setFixingIssueId(issue.id);
+      setFixMessage(null);
+      
+      const response = await fetch(`${API_BASE_URL}/api/datasets/${currentDatasetId}/fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issue_id: issue.id,
+          issue_type: issue.type,
+          column: issue.column
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Failed to apply fix');
+      }
+
+      setFixMessage({ type: 'success', text: `Successfully fixed: ${issue.type}` });
+      
+      // Refresh data
+      const qualityResponse = await fetch(`${API_BASE_URL}/api/datasets/${currentDatasetId}/quality`);
+      if (qualityResponse.ok) {
+        const data = await qualityResponse.json();
+        setQualityData(data);
+      }
+    } catch (err: any) {
+      setFixMessage({ type: 'error', text: err.message });
+    } finally {
+      setFixingIssueId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -83,6 +122,15 @@ export default function DataQualityPage() {
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Data Quality</h2>
         <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Review issues found during the automated data cleaning process.</p>
       </div>
+
+      {fixMessage && (
+        <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+          fixMessage.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20 text-rose-800 dark:text-rose-400'
+        }`}>
+          {fixMessage.type === 'success' ? <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" /> : <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />}
+          <p className="text-sm font-medium">{fixMessage.text}</p>
+        </div>
+      )}
 
       <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         <motion.div variants={item} className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-center xl:col-span-2">
@@ -208,8 +256,13 @@ export default function DataQualityPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{issue.suggestedFix}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-brand dark:text-brand-light hover:text-brand-dark dark:hover:text-white flex items-center gap-1 transition-colors">
-                      <CheckCircle className="w-4 h-4" /> Apply Fix
+                    <button 
+                      onClick={() => handleApplyFix(issue)}
+                      disabled={fixingIssueId === issue.id}
+                      className="text-brand dark:text-brand-light hover:text-brand-dark dark:hover:text-white flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {fixingIssueId === issue.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      {fixingIssueId === issue.id ? 'Fixing...' : 'Apply Fix'}
                     </button>
                   </td>
                 </tr>

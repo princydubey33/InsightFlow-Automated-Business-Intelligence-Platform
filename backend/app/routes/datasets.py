@@ -134,4 +134,21 @@ def ask_dataset_question(dataset_id: int, request: AskQuestionRequest, db: Sessi
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating AI answer: {str(e)}")
 
+from ..schemas.dataset import FixIssueRequest
+from ..services.dataset_service import apply_fix
 
+@router.post("/{dataset_id}/fix")
+def fix_dataset_issue(dataset_id: int, request: FixIssueRequest, db: Session = Depends(get_db)):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+        
+    success = apply_fix(file_path, dataset.file_type, request.issue_id, request.issue_type, request.column)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to apply fix to dataset")
+        
+    return {"message": f"Successfully applied fix for {request.issue_type}"}

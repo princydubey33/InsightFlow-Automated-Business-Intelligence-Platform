@@ -20,3 +20,8 @@ class DatasetResponse(DatasetBase):
 
     class Config:
         from_attributes = True
+
+class FixIssueRequest(BaseModel):
+    issue_id: str
+    issue_type: str
+    column: str

@@ -126,3 +126,42 @@ def generate_quality_report(df: pd.DataFrame, file_path: str):
     report_path = f"{file_path}.quality.json"
     with open(report_path, "w") as f:
         json.dump(report, f)
+
+def apply_fix(file_path: str, file_type: str, issue_id: str, issue_type: str, column: str) -> bool:
+    try:
+        if file_type == 'text/csv' or file_path.endswith('.csv'):
+            df = pd.read_csv(file_path)
+        elif file_type in ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] or file_path.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(file_path)
+        else:
+            return False
+
+        if issue_type == "Duplicate Rows":
+            df.drop_duplicates(inplace=True)
+        elif issue_type == "Missing Values" and column in df.columns:
+            if pd.api.types.is_numeric_dtype(df[column]):
+                df[column].fillna(df[column].mean(), inplace=True)
+            else:
+                df[column].fillna(df[column].mode()[0] if not df[column].mode().empty else "Unknown", inplace=True)
+        elif issue_type == "Outliers" and column in df.columns:
+            Q1 = df[column].quantile(0.25)
+            Q3 = df[column].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            # Cap outliers
+            df[column] = np.where(df[column] < lower_bound, lower_bound, df[column])
+            df[column] = np.where(df[column] > upper_bound, upper_bound, df[column])
+
+        # Save back to file
+        if file_type == 'text/csv' or file_path.endswith('.csv'):
+            df.to_csv(file_path, index=False)
+        else:
+            df.to_excel(file_path, index=False)
+
+        # Regenerate the quality report to reflect changes
+        generate_quality_report(df, file_path)
+        return True
+    except Exception as e:
+        print(f"Error applying fix: {e}")
+        return False
