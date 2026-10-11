@@ -43,54 +43,76 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     return db_user
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ..config import settings
 from ..services.email_service import send_reset_email
 
 @router.post("/forgot-password")
 def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.email == req.email).first()
+    email_clean = req.email.strip().lower()
+    db_user = db.query(models.User).filter(models.User.email.ilike(email_clean)).first()
     
     if not db_user:
-        # Return success even if user not found to prevent email enumeration
-        return {"message": "If that email is in our system, we have sent a reset link."}
+        # Prevent email enumeration while returning informative response
+        return {"message": f"If an account exists for {req.email}, reset instructions have been sent."}
     
     # Generate cryptographically secure token
     raw_token = secrets.token_urlsafe(32)
     hashed_token = hash_password(raw_token)
     
-    # Set expiration to 1 hour from now
+    # Set expiration to 1 hour from now (UTC)
+    now_utc = datetime.now(timezone.utc)
     db_user.reset_token = hashed_token
-    from datetime import timezone
-    db_user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    db_user.reset_token_expires = now_utc + timedelta(hours=1)
     db.commit()
     
-    # Send email
-    reset_link = f"{settings.frontend_url}/reset-password?token={raw_token}&email={req.email}"
-    success = send_reset_email(req.email, reset_link)
+    # Send email to the actual user who requested the reset
+    frontend_base = settings.frontend_url.rstrip("/")
+    reset_link = f"{frontend_base}/reset-password?token={raw_token}&email={db_user.email}"
+    success = send_reset_email(db_user.email, reset_link)
     
     if not success:
         # Clear token if email failed
         db_user.reset_token = None
         db_user.reset_token_expires = None
         db.commit()
-        raise HTTPException(status_code=500, detail="Failed to send email. Please ensure SMTP configuration is correct in the server environment.")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to send password reset email. Please ensure SMTP configuration is configured in the server environment."
+        )
         
-    return {"message": "Password reset instructions sent to your email."}
+    return {"message": f"Password reset instructions sent to {db_user.email}."}
 
 @router.post("/reset-password")
 def reset_password(req: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    if not req.token or not req.new_password:
+        raise HTTPException(status_code=400, detail="Token and new password are required.")
+
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+
     hashed_token = hash_password(req.token)
     
     db_user = db.query(models.User).filter(models.User.reset_token == hashed_token).first()
     
-    from datetime import timezone
-    now = datetime.now(timezone.utc)
-    
-    if not db_user or not db_user.reset_token_expires or db_user.reset_token_expires < now:
+    if not db_user or not db_user.reset_token_expires:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
     
-    # Update password and clear token
+    # Robust timezone comparison (handles both SQLite timezone-naive and timezone-aware datetimes)
+    expires = db_user.reset_token_expires
+    if expires.tzinfo is not None:
+        now = datetime.now(timezone.utc)
+    else:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        
+    if expires < now:
+        # Invalidate expired token
+        db_user.reset_token = None
+        db_user.reset_token_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="Reset token has expired.")
+    
+    # Update password and clear token (single use)
     db_user.password = hash_password(req.new_password)
     db_user.reset_token = None
     db_user.reset_token_expires = None
