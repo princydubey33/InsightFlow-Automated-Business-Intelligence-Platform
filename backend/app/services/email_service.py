@@ -12,7 +12,7 @@ def send_reset_email(to_email: str, reset_link: str) -> bool:
         f"You requested a password reset for your InsightFlow account.\n\n"
         f"Click the link below or copy and paste it into your browser to reset your password:\n"
         f"{reset_link}\n\n"
-        f"This link is valid for 1 hour. If you did not request this, please ignore this email."
+        f"This link is valid for 24 hours. If you did not request this, please ignore this email."
     )
     html = f"""<!DOCTYPE html>
 <html>
@@ -23,7 +23,7 @@ def send_reset_email(to_email: str, reset_link: str) -> bool:
         <p style="margin: 0; color: #64748b; font-size: 14px;">We received a request to reset your password.</p>
       </div>
       <p style="font-size: 14px; line-height: 1.6; color: #334155;">
-        Click the button below to choose a new password. For security, this link is single-use and will expire in <strong>1 hour</strong>.
+        Click the button below to choose a new password. For security, this link is single-use and will expire in <strong>24 hours</strong>.
       </p>
       <div style="margin: 28px 0; text-align: center;">
         <a href="{reset_link}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block; font-size: 14px;">Reset Password</a>

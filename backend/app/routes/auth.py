@@ -60,10 +60,15 @@ def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(ge
     raw_token = secrets.token_urlsafe(32)
     hashed_token = hash_password(raw_token)
     
-    # Set expiration to 1 hour from now (UTC)
+    # Set generous expiration (24 hours from now in UTC)
     now_utc = datetime.now(timezone.utc)
-    db_user.reset_token = hashed_token
-    db_user.reset_token_expires = now_utc + timedelta(hours=1)
+    
+    # Retain recent active token hashes so older emails in email client threads still work
+    existing_tokens = [t.strip() for t in (db_user.reset_token or "").split(",") if t.strip()]
+    existing_tokens = existing_tokens[-4:] + [hashed_token]
+    
+    db_user.reset_token = ",".join(existing_tokens)
+    db_user.reset_token_expires = now_utc + timedelta(hours=24)
     db.commit()
     
     # Send email to the actual user who requested the reset
@@ -91,11 +96,17 @@ def reset_password(req: schemas.ResetPasswordRequest, db: Session = Depends(get_
     if len(req.new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
 
-    hashed_token = hash_password(req.token)
+    token_clean = req.token.strip()
+    hashed_token = hash_password(token_clean)
     
-    db_user = db.query(models.User).filter(models.User.reset_token == hashed_token).first()
+    # Query user whose reset_token column contains this hashed token
+    db_user = db.query(models.User).filter(models.User.reset_token.contains(hashed_token)).first()
     
     if not db_user or not db_user.reset_token_expires:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+    
+    valid_tokens = [t.strip() for t in db_user.reset_token.split(",") if t.strip()]
+    if hashed_token not in valid_tokens:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
     
     # Robust timezone comparison (handles both SQLite timezone-naive and timezone-aware datetimes)
