@@ -238,5 +238,23 @@ class TestPasswordResetFlow(unittest.TestCase):
             _, call_args, _ = mock_server.sendmail.mock_calls[0]
             self.assertIn("target_recipient@example.com", call_args[1])
 
+    @patch("httpx.post")
+    def test_email_service_resend_dispatch(self, mock_httpx_post):
+        """Test direct send_reset_email function dispatches to Resend API over HTTPS."""
+        from app.services.email_service import send_reset_email
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_httpx_post.return_value = mock_resp
+
+        with patch.object(settings, "resend_api_key", "re_test_key_12345"):
+            success = send_reset_email("target_recipient@example.com", "https://frontend.com/reset-password?token=abc")
+            self.assertTrue(success)
+            mock_httpx_post.assert_called_once()
+            args, kwargs = mock_httpx_post.call_args
+            self.assertEqual(args[0], "https://api.resend.com/emails")
+            self.assertEqual(kwargs["json"]["to"], ["target_recipient@example.com"])
+            self.assertEqual(kwargs["headers"]["Authorization"], "Bearer re_test_key_12345")
+
 if __name__ == "__main__":
     unittest.main()
