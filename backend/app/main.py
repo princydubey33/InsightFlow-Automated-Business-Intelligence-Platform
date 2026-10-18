@@ -22,6 +22,23 @@ user_models.Base.metadata.create_all(bind=engine)
 dataset_models.Base.metadata.create_all(bind=engine)
 activity_models.Base.metadata.create_all(bind=engine)
 
+from sqlalchemy import text
+def ensure_user_columns():
+    with engine.connect() as conn:
+        try:
+            result = conn.execute(text("PRAGMA table_info(users)"))
+            cols = [row[1] for row in result.fetchall()]
+            if cols:
+                if "reset_token" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR"))
+                if "reset_token_expires" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires DATETIME"))
+                conn.commit()
+        except Exception as e:
+            print(f"Column migration warning: {e}")
+
+ensure_user_columns()
+
 app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
