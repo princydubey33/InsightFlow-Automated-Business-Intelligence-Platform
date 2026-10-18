@@ -147,7 +147,7 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
                 valid_df = df[~invalid_sales]
                 grouped_date = valid_df.groupby('__formatted_date')[rev_col].sum().reset_index()
                 grouped_date = grouped_date.sort_values('__formatted_date')
-                analytics["revenueByDate"] = [{"name": row['__formatted_date'], "value": row[rev_col]} for index, row in grouped_date.dropna().iterrows()]
+                analytics["revenueByDate"] = [{"name": str(row['__formatted_date']), "value": float(row[rev_col])} for index, row in grouped_date.dropna().iterrows()]
 
                 # Orders vs Returns by Date
                 orders_returns_data = []
@@ -179,21 +179,21 @@ def generate_analytics(file_path: str, file_type: str) -> Dict[str, Any]:
             prod_col = cols['product']
             if prod_col:
                 grouped_prod = valid_df.groupby(prod_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
-                analytics["revenueByProduct"] = [{"name": str(row[prod_col]), "value": row[rev_col]} for index, row in grouped_prod.iterrows()]
+                analytics["revenueByProduct"] = [{"name": str(row[prod_col]), "value": float(row[rev_col])} for index, row in grouped_prod.iterrows()]
                 analytics["top5Products"] = analytics["revenueByProduct"][:5]
 
             # Category
             cat_col = cols['category']
             if cat_col:
                 grouped_cat = valid_df.groupby(cat_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
-                analytics["revenueByCategory"] = [{"name": str(row[cat_col]), "value": row[rev_col]} for index, row in grouped_cat.iterrows()]
+                analytics["revenueByCategory"] = [{"name": str(row[cat_col]), "value": float(row[rev_col])} for index, row in grouped_cat.iterrows()]
                 analytics["top5Categories"] = analytics["revenueByCategory"][:5]
 
             # City
             city_col = cols['city']
             if city_col:
                 grouped_city = valid_df.groupby(city_col)[rev_col].sum().reset_index().sort_values(by=rev_col, ascending=False)
-                analytics["revenueByCity"] = [{"name": str(row[city_col]), "value": row[rev_col]} for index, row in grouped_city.iterrows()]
+                analytics["revenueByCity"] = [{"name": str(row[city_col]), "value": float(row[rev_col])} for index, row in grouped_city.iterrows()]
                 analytics["top5Cities"] = analytics["revenueByCity"][:5]
                 analytics["cityLabel"] = "Regions" if "region" in city_col.lower() else "Locations" if "location" in city_col.lower() else "Cities"
 

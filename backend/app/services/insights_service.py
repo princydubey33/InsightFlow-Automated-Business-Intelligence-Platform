@@ -84,15 +84,16 @@ def generate_insights(file_path: str, file_type: str) -> List[Dict[str, Any]]:
 
     # 7. Highest Revenue City
     top_cities = analytics_data.get("top5Cities", [])
+    city_label = analytics_data.get("cityLabel", "City")
     if top_cities:
         best_city = top_cities[0]
         insights.append({
             "type": "metric",
-            "title": "Top City by Revenue",
-            "description": "The city generating the highest revenue.",
+            "title": f"Top {city_label} by Revenue",
+            "description": f"The {city_label.lower()} generating the highest revenue.",
             "value": f"{best_city['name']} (₹{best_city['value']:,.2f})",
             "severity": "success",
-            "recommendation": "Allocate more local marketing budget to this region."
+            "recommendation": f"Allocate more marketing budget to this {city_label.lower()}."
         })
 
     # 8. Revenue Trend

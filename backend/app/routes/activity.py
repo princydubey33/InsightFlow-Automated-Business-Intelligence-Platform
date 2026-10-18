@@ -22,8 +22,10 @@ def get_activity_history(
     user_id: Optional[int] = Depends(get_current_user_id)
 ):
     query = db.query(ActivityLog)
-    if user_id:
+    if user_id is not None:
         query = query.filter(ActivityLog.user_id == user_id)
+    else:
+        query = query.filter(ActivityLog.user_id.is_(None))
     
     return query.order_by(ActivityLog.created_at.desc()).all()
 
@@ -33,8 +35,10 @@ def get_dataset_history(
     user_id: Optional[int] = Depends(get_current_user_id)
 ):
     query = db.query(Dataset)
-    if user_id:
+    if user_id is not None:
         query = query.filter(Dataset.user_id == user_id)
+    else:
+        query = query.filter(Dataset.user_id.is_(None))
         
     return query.order_by(Dataset.uploaded_at.desc()).all()
 

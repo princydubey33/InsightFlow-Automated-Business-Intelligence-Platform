@@ -137,12 +137,15 @@ def apply_fix(file_path: str, file_type: str, issue_id: str, issue_type: str, co
             return False
 
         if issue_type == "Duplicate Rows":
-            df.drop_duplicates(inplace=True)
+            df = df.drop_duplicates()
         elif issue_type == "Missing Values" and column in df.columns:
             if pd.api.types.is_numeric_dtype(df[column]):
-                df[column].fillna(df[column].mean(), inplace=True)
+                fill_val = df[column].mean()
+                df[column] = df[column].fillna(0 if pd.isna(fill_val) else fill_val)
             else:
-                df[column].fillna(df[column].mode()[0] if not df[column].mode().empty else "Unknown", inplace=True)
+                mode_series = df[column].mode()
+                fill_val = mode_series.iloc[0] if not mode_series.empty else "Unknown"
+                df[column] = df[column].fillna(fill_val)
         elif issue_type == "Outliers" and column in df.columns:
             Q1 = df[column].quantile(0.25)
             Q3 = df[column].quantile(0.75)

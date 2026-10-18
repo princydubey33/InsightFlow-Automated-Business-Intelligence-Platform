@@ -23,18 +23,26 @@ def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> Optional[int
         return int(x_user_id)
     return None
 
+def verify_dataset_access(dataset: Dataset, user_id: Optional[int]):
+    if dataset.user_id is not None:
+        if user_id is None or dataset.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this dataset")
+
 @router.get("", response_model=List[DatasetResponse])
 def get_datasets(db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id)):
     query = db.query(Dataset)
-    if user_id:
+    if user_id is not None:
         query = query.filter(Dataset.user_id == user_id)
+    else:
+        query = query.filter(Dataset.user_id == None)
     return query.order_by(Dataset.uploaded_at.desc()).all()
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
-def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
+def get_dataset(dataset_id: int, db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id)):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
     return dataset
 
 @router.delete("/{dataset_id}")
@@ -43,16 +51,17 @@ def delete_dataset(dataset_id: int, db: Session = Depends(get_db), user_id: Opti
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
         
-    if dataset.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this dataset")
+    verify_dataset_access(dataset, user_id)
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     if os.path.exists(file_path):
         os.remove(file_path)
+    
+    report_path = f"{file_path}.quality.json"
+    if os.path.exists(report_path):
+        os.remove(report_path)
         
-    # We do NOT delete the activity logs automatically here. We just set dataset_id to None in the logs, or let them be.
-    # The requirement says: "Deleting an activity log must NOT delete the original CSV dataset or saved reports unless the user explicitly chooses a separate "Delete Dataset" action."
-    # If the user deletes a dataset, what happens to history? Let's cascade delete the history logs for this dataset to keep it clean.
+    # Cascade delete the activity logs for this dataset
     from ..models.activity import ActivityLog
     db.query(ActivityLog).filter(ActivityLog.dataset_id == dataset_id).delete()
         
@@ -65,6 +74,7 @@ def get_dataset_quality(dataset_id: int, db: Session = Depends(get_db), user_id:
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     report_path = f"{file_path}.quality.json"
@@ -82,6 +92,7 @@ def get_dataset_analytics(dataset_id: int, db: Session = Depends(get_db), user_i
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     if not os.path.exists(file_path):
@@ -102,6 +113,7 @@ def get_dataset_insights(dataset_id: int, db: Session = Depends(get_db), user_id
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     if not os.path.exists(file_path):
@@ -116,6 +128,7 @@ def get_dataset_report(dataset_id: int, db: Session = Depends(get_db), user_id: 
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     if not os.path.exists(file_path):
@@ -134,6 +147,7 @@ def ask_dataset_question(dataset_id: int, request: AskQuestionRequest, db: Sessi
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     if not os.path.exists(file_path):
@@ -155,6 +169,7 @@ def fix_dataset_issue(dataset_id: int, request: FixIssueRequest, db: Session = D
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
     
     file_path = os.path.join(settings.upload_dir, dataset.filename)
     if not os.path.exists(file_path):
@@ -164,6 +179,20 @@ def fix_dataset_issue(dataset_id: int, request: FixIssueRequest, db: Session = D
     if not success:
         log_activity(db, user_id, dataset.id, dataset.original_filename, "Data Cleaning", "error", {"issue_type": request.issue_type})
         raise HTTPException(status_code=500, detail="Failed to apply fix to dataset")
+    
+    # Update dataset row count and file size in database to reflect changes
+    import pandas as pd
+    try:
+        if dataset.file_type == 'text/csv' or file_path.endswith('.csv'):
+            updated_df = pd.read_csv(file_path)
+        else:
+            updated_df = pd.read_excel(file_path)
+        dataset.row_count = len(updated_df)
+        dataset.column_count = len(updated_df.columns)
+        dataset.file_size = os.path.getsize(file_path)
+        db.commit()
+    except Exception:
+        pass
         
     log_activity(db, user_id, dataset.id, dataset.original_filename, "Data Cleaning", "success", {"issue_type": request.issue_type})
-    return {"message": f"Successfully applied fix for {request.issue_type}"}
+    return {"success": True, "message": f"Successfully applied fix for {request.issue_type}"}
