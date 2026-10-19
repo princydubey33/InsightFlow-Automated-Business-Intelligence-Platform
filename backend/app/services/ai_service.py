@@ -295,15 +295,15 @@ DATASET SUMMARY:
 {context_str}
 
 INSTRUCTIONS:
-1. You can chat normally and fluently in English, Hindi, or Hinglish.
-2. If the user asks a conversational question, answer it directly.
+1. You can chat normally and fluently in English, Hindi, or Hinglish. Always match the user's language (if the user asks in Hinglish or Hindi, e.g. "Total revenue kitna hai?", answer back in friendly, fluent Hinglish; if they ask in English, answer in English).
+2. If the user asks a conversational question (e.g. "hi", "kaise ho", "help me"), answer it warmly and directly.
 3. If the user asks a question about the data that requires calculation (like row counts, averages, correlations, finding missing values, duplicate checks, sorting, etc.), you MUST write Python code to calculate the answer exactly. 
 4. To run code, output a block starting EXACTLY with ```python and ending with ```. You must PRINT the final answer (e.g., `print(result)`).
 5. The system will run your python code on the `df` dataframe and give you the output.
-6. Once you get the output, explain the result clearly to the user.
+6. Once you get the output, explain the result clearly to the user in their language.
 7. Do NOT invent or guess calculations. If you need a calculation, write the python code.
 
-Example:
+Example 1 (English):
 User: How many missing values are in the Age column?
 Assistant: Let me check that for you.
 ```python
@@ -311,6 +311,17 @@ print(df['Age'].isna().sum())
 ```
 System Output: 5
 Assistant: There are 5 missing values in the Age column.
+
+Example 2 (Hinglish):
+User: Total revenue kitna hai aur sabse zyada bikne wala product kaunsa hai?
+Assistant: Main aapke dataset se calculate karke batata hoon.
+```python
+top_p = df.groupby('Product')['Revenue'].sum().idxmax() if 'Product' in df.columns and 'Revenue' in df.columns else 'N/A'
+tot_rev = df['Revenue'].sum() if 'Revenue' in df.columns else 0
+print("Revenue:", tot_rev, "Top Product:", top_p)
+```
+System Output: Revenue: 450000 Top Product: Laptop
+Assistant: Aapke dataset me total revenue ₹4,50,000 hai aur sabse zyada revenue generate karne wala product 'Laptop' hai.
 """
 
     last_error_msg = ""

@@ -114,7 +114,7 @@ export default function InsightsPage() {
   const [chat, setChat] = useState<{ role: 'user' | 'ai'; text: string; sources?: string[] }[]>([
     { 
       role: 'ai', 
-      text: 'Hello! I am your InsightFlow AI assistant. Ask me anything about your dataset (e.g. "What is the total revenue?", "Which product has the highest revenue?").' 
+      text: 'Hello! I am your InsightFlow AI assistant. Aap mujhse English ya Hinglish me apne dataset ke baare me kuch bhi puch sakte hain (e.g. "Total revenue kitna hai?", "Which product has the highest sales?", "Missing values kitne hain?").' 
     }
   ]);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -469,7 +469,7 @@ export default function InsightsPage() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               disabled={isTyping}
-              placeholder={isTyping ? "AI is analyzing your dataset..." : "Ask a question about your data..."} 
+              placeholder={isTyping ? "AI is analyzing your dataset..." : "Ask in English or Hinglish (e.g. Total revenue kitna hai?)..."} 
               className="w-full pl-4 pr-12 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-full focus:outline-none focus:ring-2 focus:ring-brand focus:bg-white dark:focus:bg-slate-900 transition-all text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 shadow-inner disabled:opacity-60"
             />
             <button 
