@@ -117,13 +117,16 @@ def _call_groq_api(messages: List[Dict[str, str]], api_key: str) -> str:
     candidate_models = []
     if env_model and not env_model.startswith("gemini") and not env_model.startswith("gpt"):
         candidate_models.append(env_model)
-    for m in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]:
+    for m in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama-3.1-70b-versatile", "llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]:
         if m not in candidate_models:
             candidate_models.append(m)
 
     last_err: Optional[Exception] = None
     with httpx.Client(timeout=30.0) as client:
-        for model in candidate_models:
+        i = 0
+        while i < len(candidate_models):
+            model = candidate_models[i]
+            i += 1
             res = client.post(
                 api_url,
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -141,6 +144,11 @@ def _call_groq_api(messages: List[Dict[str, str]], api_key: str) -> str:
             # If model does not exist or user lacks access (HTTP 404), try next candidate model
             if res.status_code == 404:
                 last_err = Exception(f"GROQ Error (HTTP 404): {err_msg}")
+                match = re.search(r'model ([\w\.-]+)', err_msg)
+                if match:
+                    sugg = match.group(1)
+                    if sugg not in candidate_models:
+                        candidate_models.append(sugg)
                 continue
 
             if res.status_code == 401:
@@ -158,7 +166,7 @@ def _call_gemini_api(messages: List[Dict[str, str]], api_key: str) -> str:
     candidate_models = []
     if env_model and "gemini" in env_model:
         candidate_models.append(env_model)
-    for m in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]:
+    for m in ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]:
         if m not in candidate_models:
             candidate_models.append(m)
 
@@ -185,7 +193,10 @@ def _call_gemini_api(messages: List[Dict[str, str]], api_key: str) -> str:
 
     last_err: Optional[Exception] = None
     with httpx.Client(timeout=30.0) as client:
-        for model in candidate_models:
+        i = 0
+        while i < len(candidate_models):
+            model = candidate_models[i]
+            i += 1
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             res = client.post(
                 url,
@@ -207,6 +218,12 @@ def _call_gemini_api(messages: List[Dict[str, str]], api_key: str) -> str:
 
             if res.status_code == 404:
                 last_err = Exception(f"Gemini Error (HTTP 404): {err_msg}")
+                # Auto-extract suggested model from Google's response if specified (e.g. models/gemini-3.8-flash)
+                match = re.search(r'models/(gemini-[\w\.-]+)', err_msg)
+                if match:
+                    sugg = match.group(1)
+                    if sugg not in candidate_models:
+                        candidate_models.append(sugg)
                 continue
 
             if res.status_code == 401 or (res.status_code == 400 and "API_KEY_INVALID" in err_msg):

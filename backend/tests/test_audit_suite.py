@@ -501,4 +501,23 @@ class TestAIChatbotServiceAndProviderIntegration:
                 assert "Gemini answered your data question!" in res["answer"]
                 assert "InsightFlow AI (Gemini)" in res["sources"]
 
+    def test_gemini_dynamic_model_extraction_on_404(self):
+        """When Gemini returns a 404 suggesting a newer model, the client extracts it and retries."""
+        from backend.app.services.ai_service import _call_llm_api
+        messages = [{"role": "user", "content": "hello"}]
+
+        resp_404 = MagicMock(status_code=404, json=lambda: {
+            "error": {"message": "This model models/gemini-2.0-flash is no longer available. Please update your code to use models/gemini-3.8-flash"}
+        })
+        resp_200 = MagicMock(status_code=200, json=lambda: {
+            "candidates": [{"content": {"parts": [{"text": "Gemini 3.8 response"}]}}]
+        })
+
+        with patch("httpx.Client.post", side_effect=[resp_404, resp_200]) as mock_post:
+            with patch.dict(os.environ, {"AI_MODEL": "gemini-deprecated"}):
+                res = _call_llm_api(messages, "AIzaSy_fake", "gemini")
+                assert res == "Gemini 3.8 response"
+                assert mock_post.call_count == 2
+
+
 
