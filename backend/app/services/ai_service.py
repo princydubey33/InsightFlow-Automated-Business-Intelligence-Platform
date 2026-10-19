@@ -110,6 +110,36 @@ def get_ai_credentials() -> tuple[Optional[str], Optional[str]]:
         return providers[0]
     return None, None
 
+_cached_gemini_models: Optional[List[str]] = None
+_cached_gemini_time: float = 0.0
+
+def _get_active_gemini_models(api_key: str) -> List[str]:
+    global _cached_gemini_models, _cached_gemini_time
+    import time
+    if _cached_gemini_models and (time.time() - _cached_gemini_time < 1800):
+        return _cached_gemini_models
+
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            res = client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}")
+            if res.status_code == 200:
+                data = res.json()
+                found = []
+                for item in data.get("models", []):
+                    name = item.get("name", "").replace("models/", "")
+                    methods = item.get("supportedGenerationMethods", [])
+                    if "generateContent" in methods and "flash" in name:
+                        found.append(name)
+                if found:
+                    preferred = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash", "gemini-3.8-flash"]
+                    ordered = [m for m in preferred if m in found] + [m for m in found if m not in preferred]
+                    _cached_gemini_models = ordered
+                    _cached_gemini_time = time.time()
+                    return ordered
+    except Exception:
+        pass
+    return ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-1.5-pro"]
+
 def _call_groq_api(messages: List[Dict[str, str]], api_key: str) -> str:
     api_url = "https://api.groq.com/openai/v1/chat/completions"
     env_model = (os.getenv("AI_MODEL") or "").strip()
@@ -127,11 +157,17 @@ def _call_groq_api(messages: List[Dict[str, str]], api_key: str) -> str:
         while i < len(candidate_models):
             model = candidate_models[i]
             i += 1
-            res = client.post(
-                api_url,
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "temperature": 0.1}
-            )
+            try:
+                res = client.post(
+                    api_url,
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={"model": model, "messages": messages, "temperature": 0.1},
+                    timeout=5.0
+                )
+            except (httpx.TimeoutException, httpx.RequestError) as te:
+                last_err = Exception(f"GROQ Timeout/Network error on {model}: {str(te)}")
+                continue
+
             if res.status_code == 200:
                 return res.json()["choices"][0]["message"]["content"].strip()
             
@@ -163,10 +199,14 @@ def _call_groq_api(messages: List[Dict[str, str]], api_key: str) -> str:
 
 def _call_gemini_api(messages: List[Dict[str, str]], api_key: str) -> str:
     env_model = (os.getenv("AI_MODEL") or "").strip()
+    active_models = _get_active_gemini_models(api_key)
     candidate_models = []
     if env_model and "gemini" in env_model:
         candidate_models.append(env_model)
-    for m in ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]:
+    for m in active_models:
+        if m not in candidate_models:
+            candidate_models.append(m)
+    for m in ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-1.5-pro"]:
         if m not in candidate_models:
             candidate_models.append(m)
 
@@ -192,17 +232,23 @@ def _call_gemini_api(messages: List[Dict[str, str]], api_key: str) -> str:
         }
 
     last_err: Optional[Exception] = None
-    with httpx.Client(timeout=15.0) as client:
+    with httpx.Client(timeout=10.0) as client:
         i = 0
         while i < len(candidate_models):
             model = candidate_models[i]
             i += 1
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            res = client.post(
-                url,
-                headers={"Content-Type": "application/json"},
-                json=payload
-            )
+            try:
+                res = client.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                    timeout=8.0
+                )
+            except (httpx.TimeoutException, httpx.RequestError) as te:
+                last_err = Exception(f"Gemini Timeout/Network error on {model}: {str(te)}")
+                continue
+
             if res.status_code == 200:
                 data = res.json()
                 candidates = data.get("candidates", [])
@@ -268,6 +314,69 @@ def _call_llm_api(messages: List[Dict[str, str]], api_key: str, provider: str) -
         return _call_openai_api(messages, api_key)
     else:
         raise Exception(f"Unsupported AI provider '{provider}'")
+
+def _fallback_data_answer(question: str, df: pd.DataFrame, dataset: Dataset) -> str:
+    q = question.lower()
+    is_hinglish = any(w in q for w in ["hai", "kya", "kitna", "kitne", "batao", "kaunsa", "konsa", "kaise", "hoga", "kripya", "namaste", "mujhe", "deta", "bheja"])
+    
+    rows = len(df)
+    cols = list(df.columns)
+    
+    # Conversational greetings
+    if any(q.strip().startswith(g) for g in ["hi", "hello", "hey", "namaste", "kaise ho", "help", "mene upload"]):
+        if is_hinglish:
+            return f"Namaste! Main aapka InsightFlow AI assistant hoon. Main aapke dataset ('{dataset.original_filename}') ka live analysis karne ke liye ready hoon. Aap mujhse koi bhi question puch sakte hain (jaise: 'Total revenue kitna hai?', 'Total rows kitne hain?', 'Top product kaunsa hai?')."
+        return f"Hello! I am your InsightFlow AI assistant. I am ready to analyze your dataset ('{dataset.original_filename}'). Ask me anything (e.g. 'What is the total revenue?', 'How many rows?', 'Which product has the highest sales?')."
+
+    # Row count queries
+    if any(k in q for k in ["row", "record", "kitne", "count", "entries"]):
+        if is_hinglish:
+            return f"Aapke dataset '{dataset.original_filename}' me kul **{rows:,} rows (records)** aur **{len(cols)} columns** hain."
+        return f"Your dataset '{dataset.original_filename}' contains **{rows:,} rows** and **{len(cols)} columns**."
+
+    # Revenue / Sales queries
+    rev_col = next((c for c in df.columns if any(k in c.lower() for k in ["revenue", "sales", "amount", "price", "total", "income"])), None)
+    cat_col = next((c for c in df.columns if any(k in c.lower() for k in ["product", "category", "item", "city", "region"])), None)
+
+    if any(k in q for k in ["revenue", "sale", "kamai", "bikne", "total", "sum", "bikri"]):
+        if rev_col and pd.api.types.is_numeric_dtype(df[rev_col]):
+            tot_rev = float(df[rev_col].sum())
+            top_str = ""
+            if cat_col:
+                try:
+                    top_item = df.groupby(cat_col)[rev_col].sum().idxmax()
+                    top_val = float(df.groupby(cat_col)[rev_col].sum().max())
+                    if is_hinglish:
+                        top_str = f" Aur '{cat_col}' me sabse aage **{top_item}** hai (₹{top_val:,.2f})."
+                    else:
+                        top_str = f" Top {cat_col} by revenue is **{top_item}** ({top_val:,.2f})."
+                except Exception:
+                    pass
+            if is_hinglish:
+                return f"Aapke dataset me total revenue (column '{rev_col}') **₹{tot_rev:,.2f}** hai.{top_str}"
+            return f"The total {rev_col} across your dataset is **{tot_rev:,.2f}**.{top_str}"
+
+    # Missing / Null queries
+    if any(k in q for k in ["missing", "null", "empty", "khali"]):
+        missing = int(df.isna().sum().sum())
+        if is_hinglish:
+            return f"Aapke dataset '{dataset.original_filename}' me kul **{missing:,} missing / empty values** hain."
+        return f"There are **{missing:,} missing / empty values** in '{dataset.original_filename}'."
+
+    # Column list
+    if any(k in q for k in ["column", "header", "feature", "field"]):
+        col_list = ", ".join([f"`{c}`" for c in cols[:12]])
+        if is_hinglish:
+            return f"Dataset me kul {len(cols)} columns hain: {col_list}."
+        return f"The dataset contains {len(cols)} columns: {col_list}."
+
+    # General fallback
+    summary_parts = []
+    if rev_col and pd.api.types.is_numeric_dtype(df[rev_col]):
+        summary_parts.append(f"Total {rev_col}: ₹{df[rev_col].sum():,.2f}")
+    if is_hinglish:
+        return f"Main aapke dataset '{dataset.original_filename}' ka data dekh kar bata raha hoon:\n- **Total Rows**: {rows:,}\n- **Columns**: {', '.join(cols[:6])}\n" + ("\n".join([f"- **{p}**" for p in summary_parts]))
+    return f"Based on your dataset '{dataset.original_filename}':\n- **Total Rows**: {rows:,}\n- **Columns**: {', '.join(cols[:6])}\n" + ("\n".join([f"- **{p}**" for p in summary_parts]))
 
 def answer_dataset_question(question: str, dataset: Dataset, file_path: str, history: List[Dict[str, str]] = None) -> Dict[str, Any]:
     q_clean = question.strip()
@@ -383,6 +492,15 @@ Assistant: Aapke dataset me total revenue ₹4,50,000 hai aur sabse zyada revenu
             last_error_msg = f"I encountered an error connecting to the AI provider ({provider.title()}).\nDetails: {str(e)}"
             # Fall back to next configured provider
             continue
+
+    # Fallback to local deterministic analysis if external LLMs fail or timeout
+    fallback_ans = _fallback_data_answer(q_clean, df, dataset)
+    if fallback_ans:
+        return {
+            "answer": fallback_ans,
+            "sources": ["InsightFlow Intelligent Engine (Direct DataFrame Analysis)"],
+            "dataset_id": dataset.id
+        }
 
     return {
         "answer": last_error_msg,
