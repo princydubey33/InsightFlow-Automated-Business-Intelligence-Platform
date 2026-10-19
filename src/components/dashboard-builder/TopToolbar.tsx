@@ -37,7 +37,7 @@ interface TopToolbarProps {
   onFullscreen: () => void;
   isFullscreen: boolean;
   onExportCSV: () => void;
-  onExportPDF: () => void;
+  onExportPDF: (orientation: 'landscape' | 'portrait') => void;
   onExportImage: () => void;
 }
 
@@ -260,14 +260,32 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               <button
                 onClick={() => {
                   setExportMenuOpen(false);
-                  onExportPDF();
+                  onExportPDF('landscape');
+                }}
+                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between text-gray-700 hover:text-blue-600"
+              >
+                <div className="flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-rose-500 shrink-0" />
+                  <div>
+                    <div className="font-medium flex items-center gap-1.5">
+                      <span>Print to PDF (Landscape)</span>
+                      <span className="text-[9px] bg-blue-100 text-blue-700 px-1 py-0.5 rounded font-bold">Recommended</span>
+                    </div>
+                    <div className="text-[10px] text-gray-400">A4 Landscape • Best for multi-column dashboards</div>
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  onExportPDF('portrait');
                 }}
                 className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-700 hover:text-blue-600"
               >
-                <Printer className="w-4 h-4 text-rose-500" />
+                <Printer className="w-4 h-4 text-purple-500 shrink-0" />
                 <div>
-                  <div className="font-medium">Print to PDF</div>
-                  <div className="text-[10px] text-gray-400">Export clean report page</div>
+                  <div className="font-medium">Print to PDF (Portrait)</div>
+                  <div className="text-[10px] text-gray-400">A4 Portrait • Standard vertical page</div>
                 </div>
               </button>
               <button

@@ -20,13 +20,14 @@ interface VisualCardProps {
   theme: DashboardTheme;
   processedData: {
     data: any[];
-    kpiValue?: number;
+    kpiValue?: number | null;
     kpiLabel?: string;
     seriesKeys: string[];
   };
   isSelected: boolean;
   isEditMode: boolean;
   activeCrossFilter: CrossFilter | null;
+  isPrinting?: boolean;
   onSelect: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -43,6 +44,7 @@ export const VisualCard: React.FC<VisualCardProps> = ({
   isSelected,
   isEditMode,
   activeCrossFilter,
+  isPrinting = false,
   onSelect,
   onDuplicate,
   onDelete,
@@ -71,11 +73,11 @@ export const VisualCard: React.FC<VisualCardProps> = ({
   return (
     <div 
       onClick={onSelect}
-      className={`relative group transition-all duration-200 flex flex-col ${colSpanClass} ${borderRadius} ${
+      className={`visual-card-wrapper relative group transition-all duration-200 flex flex-col ${colSpanClass} ${borderRadius} ${
         isEditMode && isSelected 
-          ? 'ring-2 ring-brand dark:ring-brand-light shadow-xl z-10' 
-          : 'hover:shadow-md'
-      }`}
+          ? 'ring-2 ring-brand dark:ring-brand-light shadow-xl z-10 print:ring-0 print:shadow-none' 
+          : 'hover:shadow-md print:shadow-none'
+      } print:break-inside-avoid print:page-break-inside-avoid print:border print:border-gray-200 print:bg-white`}
       style={{
         backgroundColor: cardBg,
         borderColor: isSelected && isEditMode ? undefined : cardBorder,
@@ -117,7 +119,7 @@ export const VisualCard: React.FC<VisualCardProps> = ({
 
         {/* Action Controls in Edit Mode */}
         {isEditMode && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0">
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0 print:hidden">
             {/* Move Left / Right */}
             <button
               type="button"
@@ -200,6 +202,7 @@ export const VisualCard: React.FC<VisualCardProps> = ({
           theme={theme}
           processedData={processedData}
           activeCrossFilter={activeCrossFilter}
+          isPrinting={isPrinting}
           onCrossFilter={(field, value) => {
             if (activeCrossFilter && activeCrossFilter.field === field && activeCrossFilter.value === value) {
               onClearCrossFilter();

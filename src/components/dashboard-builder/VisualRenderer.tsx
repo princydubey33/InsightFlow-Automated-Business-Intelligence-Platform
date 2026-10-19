@@ -17,13 +17,14 @@ interface VisualRendererProps {
   theme: DashboardTheme;
   processedData: {
     data: any[];
-    kpiValue?: number;
+    kpiValue?: number | null;
     kpiLabel?: string;
     seriesKeys: string[];
   };
   activeCrossFilter: CrossFilter | null;
   onCrossFilter?: (field: string, value: string) => void;
   isInteractive?: boolean;
+  isPrinting?: boolean;
 }
 
 export const VisualRenderer: React.FC<VisualRendererProps> = ({
@@ -32,7 +33,8 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   processedData,
   activeCrossFilter,
   onCrossFilter,
-  isInteractive = true
+  isInteractive = true,
+  isPrinting = false
 }) => {
   const { formatting, type, xField } = visual;
   const { data, kpiValue, kpiLabel, seriesKeys } = processedData;
@@ -43,10 +45,11 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
 
   const axisStroke = formatting.axisColor || theme.subtextColor;
   const gridStroke = formatting.gridColor || theme.gridColor;
+  const chartHeight = visual.height || 260;
 
   // Custom Recharts Tooltip
   const renderCustomTooltip = ({ active, payload, label }: any) => {
-    if (!formatting.showTooltip || !active || !payload || !payload.length) return null;
+    if (!formatting.showTooltip || !active || !payload || !payload.length || isPrinting) return null;
 
     return (
       <div 
@@ -80,7 +83,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   };
 
   const handleBarClick = (entry: any) => {
-    if (!isInteractive || !onCrossFilter) return;
+    if (!isInteractive || !onCrossFilter || isPrinting) return;
     const clickedVal = entry?.name || entry?.activeLabel;
     if (clickedVal && xField) {
       onCrossFilter(xField, String(clickedVal));
@@ -89,17 +92,20 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
 
   // 1. KPI Metric Card
   if (type === 'kpi') {
-    const formattedKpi = formatValue(
-      kpiValue ?? 0,
-      formatting.numberFormat,
-      formatting.currencySymbol,
-      formatting.decimalPlaces
-    );
+    const isError = kpiValue === null || kpiValue === undefined || isNaN(kpiValue);
+    const formattedKpi = isError 
+      ? 'N/A' 
+      : formatValue(
+          kpiValue,
+          formatting.numberFormat,
+          formatting.currencySymbol,
+          formatting.decimalPlaces
+        );
 
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-4">
+      <div className="flex flex-col items-center justify-center min-h-[180px] h-full text-center p-4">
         <div 
-          className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 shadow-inner"
+          className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 shadow-inner print:border print:border-gray-200"
           style={{ backgroundColor: `${colors[0]}15`, color: colors[0] }}
         >
           {formatting.numberFormat === 'currency' ? (
@@ -110,16 +116,21 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
         </div>
         <div 
           className="text-3xl sm:text-4xl font-extrabold tracking-tight"
-          style={{ color: colors[0] || theme.textColor }}
+          style={{ color: isError ? '#d97706' : (colors[0] || theme.textColor) }}
         >
           {formattedKpi}
         </div>
         <div 
-          className="text-xs font-semibold uppercase tracking-wider mt-1"
+          className="text-xs font-semibold uppercase tracking-wider mt-1.5"
           style={{ color: theme.subtextColor }}
         >
           {kpiLabel || visual.title}
         </div>
+        {isError && (
+          <div className="text-[10px] text-amber-600 mt-1">
+            No valid data in selected field
+          </div>
+        )}
       </div>
     );
   }
@@ -128,7 +139,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   if (type === 'table') {
     if (!data || data.length === 0) {
       return (
-        <div className="flex items-center justify-center h-full text-xs" style={{ color: theme.subtextColor }}>
+        <div className="flex items-center justify-center h-full min-h-[180px] text-xs" style={{ color: theme.subtextColor }}>
           No records matching current filters
         </div>
       );
@@ -137,14 +148,14 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
     const columns = Object.keys(data[0]).filter(k => k !== '_id' && k !== '_total');
 
     return (
-      <div className="overflow-x-auto h-full max-h-72 custom-scrollbar text-xs">
+      <div className="overflow-x-auto h-full max-h-72 print:max-h-none print:overflow-visible custom-scrollbar text-xs">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr style={{ borderBottom: `2px solid ${theme.cardBorder}` }}>
               {columns.map(col => (
                 <th 
                   key={col} 
-                  className="py-2.5 px-3 font-bold uppercase tracking-wider"
+                  className="py-2 px-3 font-bold uppercase tracking-wider text-[11px] bg-slate-50/50 print:bg-gray-100"
                   style={{ color: theme.subtextColor }}
                 >
                   {col}
@@ -153,7 +164,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
             </tr>
           </thead>
           <tbody>
-            {data.slice(0, 30).map((row, idx) => {
+            {data.slice(0, isPrinting ? 50 : 30).map((row, idx) => {
               const isSelected = activeCrossFilter && String(row[activeCrossFilter.field]) === activeCrossFilter.value;
               return (
                 <tr 
@@ -163,7 +174,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
                       onCrossFilter(xField, String(row[xField]));
                     }
                   }}
-                  className={`transition-colors cursor-pointer border-b ${isSelected ? 'font-bold' : ''}`}
+                  className={`transition-colors border-b ${isInteractive ? 'cursor-pointer' : ''} ${isSelected ? 'font-bold' : ''}`}
                   style={{ 
                     borderColor: `${theme.cardBorder}40`,
                     backgroundColor: isSelected ? `${colors[0]}20` : (idx % 2 === 0 ? 'transparent' : `${theme.gridColor}30`),
@@ -194,7 +205,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-xs text-center p-6" style={{ color: theme.subtextColor }}>
+      <div className="flex flex-col items-center justify-center min-h-[180px] h-full text-xs text-center p-6" style={{ color: theme.subtextColor }}>
         <Layers className="w-8 h-8 opacity-40 mb-2" />
         <p className="font-medium">No data available for this visualization.</p>
         <p className="text-[10px] mt-1 opacity-70">Verify selected fields or adjust filters.</p>
@@ -205,7 +216,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   // 3. Horizontal Bar Chart
   if (type === 'horizontal_bar') {
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeight} minHeight={220}>
         <BarChart 
           data={data} 
           layout="vertical"
@@ -239,6 +250,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
               fill={colors[sIdx % colors.length]} 
               radius={[0, 6, 6, 0]}
               cursor="pointer"
+              isAnimationActive={false}
             >
               {data.map((entry, idx) => {
                 const isSelected = activeCrossFilter && entry.name === activeCrossFilter.value;
@@ -260,7 +272,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   // 4. Vertical Bar Chart
   if (type === 'bar') {
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeight} minHeight={220}>
         <BarChart 
           data={data} 
           margin={{ top: 10, right: 15, left: 10, bottom: 20 }}
@@ -293,6 +305,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
               fill={colors[sIdx % colors.length]} 
               radius={[6, 6, 0, 0]}
               cursor="pointer"
+              isAnimationActive={false}
             >
               {data.map((entry, idx) => {
                 const isSelected = activeCrossFilter && entry.name === activeCrossFilter.value;
@@ -314,7 +327,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   // 5. Line Chart
   if (type === 'line') {
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeight} minHeight={220}>
         <LineChart 
           data={data} 
           margin={{ top: 10, right: 15, left: 10, bottom: 20 }}
@@ -348,6 +361,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
               strokeWidth={3}
               dot={{ r: 4, fill: colors[sIdx % colors.length] }}
               activeDot={{ r: 6 }}
+              isAnimationActive={false}
             />
           ))}
         </LineChart>
@@ -358,7 +372,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   // 6. Area Chart
   if (type === 'area') {
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeight} minHeight={220}>
         <AreaChart 
           data={data} 
           margin={{ top: 10, right: 15, left: 10, bottom: 20 }}
@@ -400,6 +414,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
               fillOpacity={1}
               fill={`url(#grad-${visual.id}-${sIdx})`}
               strokeWidth={2}
+              isAnimationActive={false}
             />
           ))}
         </AreaChart>
@@ -414,7 +429,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
     const outerRadius = 85;
 
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeight} minHeight={220}>
         <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
           {formatting.showTooltip && <Tooltip content={renderCustomTooltip} />}
           {formatting.showLegend && <Legend wrapperStyle={{ fontSize: 11, color: theme.textColor }} />}
@@ -429,6 +444,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
             paddingAngle={isDonut ? 3 : 1}
             onClick={(entry) => handleBarClick(entry)}
             cursor="pointer"
+            isAnimationActive={false}
           >
             {data.map((entry, index) => {
               const isSelected = activeCrossFilter && entry.name === activeCrossFilter.value;
@@ -451,7 +467,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
   // 8. Scatter Plot
   if (type === 'scatter') {
     return (
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={chartHeight} minHeight={220}>
         <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
           {formatting.showGrid && <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />}
           {formatting.showXAxis && (
@@ -474,7 +490,7 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
             />
           )}
           {formatting.showTooltip && <Tooltip content={renderCustomTooltip} cursor={{ strokeDasharray: '3 3' }} />}
-          <Scatter name="Values" data={data} fill={colors[0]}>
+          <Scatter name="Values" data={data} fill={colors[0]} isAnimationActive={false}>
             {data.map((entry, index) => (
               <Cell 
                 key={`dot-${index}`} 
@@ -489,3 +505,4 @@ export const VisualRenderer: React.FC<VisualRendererProps> = ({
 
   return null;
 };
+export default VisualRenderer;

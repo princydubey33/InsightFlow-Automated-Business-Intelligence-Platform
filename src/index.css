@@ -56,3 +56,121 @@ body {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-brand via-primary-500 to-rose-500;
   }
 }
+
+/* ==========================================================================
+   Print & PDF Export Styles (A4 Landscape & Portrait, Page Breaks, Contrast)
+   ========================================================================== */
+
+@media print {
+  /* Default A4 Landscape with professional margins */
+  @page {
+    size: A4 landscape;
+    margin: 8mm 10mm 10mm 10mm;
+  }
+
+  /* Force background colors and exact colors on printed page */
+  html,
+  body {
+    background: #ffffff !important;
+    background-image: none !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    height: auto !important;
+    min-height: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #root,
+  #root > div,
+  [data-dashboard-root] {
+    height: auto !important;
+    min-height: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  /* Hide all app chrome, sidebars, topbars, buttons, and editor panels */
+  header,
+  aside,
+  nav,
+  button,
+  .print\:hidden,
+  [data-print-hide="true"],
+  .no-print {
+    display: none !important;
+  }
+
+  /* Studio canvas expansion */
+  .dashboard-canvas {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  /* 12-column grid layout for print */
+  .dashboard-grid {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* Visual Cards: Prevent page breaks inside any chart or card */
+  .visual-card-wrapper {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    margin-bottom: 8px !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Recharts SVG layout print safety */
+  .recharts-responsive-container {
+    width: 100% !important;
+    min-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .recharts-wrapper {
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  .recharts-surface {
+    overflow: visible !important;
+    max-width: 100% !important;
+  }
+
+  svg {
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* Tables in print: show full table without scrollbar or height clipping */
+  .custom-scrollbar {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  /* Ensure text colors, backgrounds, and strokes print accurately */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

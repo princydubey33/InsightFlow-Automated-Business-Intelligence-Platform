@@ -112,10 +112,26 @@ export function filterRecords(
 }
 
 /**
- * Aggregate a list of numeric values using specified aggregation type
+ * Safely parse a value into a valid number or null
  */
-function aggregateValues(values: number[], agg: AggregationType): number {
-  if (values.length === 0) return 0;
+export function parseNumericValue(val: any): number | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'number') return isNaN(val) ? null : val;
+  const str = String(val).trim();
+  if (str === '' || str === '-' || str === 'N/A' || str === 'null') return null;
+  // Clean currency symbols, commas, spaces
+  const cleaned = str.replace(/[^\d.-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === '.') return null;
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Aggregate a list of numeric values using specified aggregation type
+ * Returns null if no valid numbers were supplied
+ */
+export function aggregateValues(values: number[], agg: AggregationType): number | null {
+  if (!values || values.length === 0) return null;
   switch (agg) {
     case 'sum':
       return values.reduce((acc, curr) => acc + curr, 0);
@@ -140,35 +156,55 @@ export function processVisualData(
   records: Record<string, any>[]
 ): {
   data: any[];
-  kpiValue?: number;
+  kpiValue?: number | null;
   kpiLabel?: string;
   seriesKeys: string[];
 } {
   if (!records || records.length === 0) {
-    return { data: [], seriesKeys: [] };
+    return { data: [], kpiValue: null, seriesKeys: [] };
   }
 
   const { xField, yField, groupField, aggregation, topN, type } = visual;
+  const targetField = yField || xField;
 
-  // KPI Card
+  // 1. KPI Metric Card
   if (type === 'kpi') {
-    const numericVals: number[] = [];
-    for (const r of records) {
-      const val = parseFloat(r[yField]);
-      if (!isNaN(val)) numericVals.push(val);
+    let aggValue: number | null = null;
+
+    if (aggregation === 'count') {
+      if (targetField && records[0] && targetField in records[0]) {
+        // Count non-empty records for this field (categorical, date, or numeric)
+        const nonNullCount = records.filter(r => {
+          const val = r[targetField];
+          return val !== null && val !== undefined && String(val).trim() !== '';
+        }).length;
+        aggValue = nonNullCount;
+      } else {
+        // Count all rows in current filtered dataset
+        aggValue = records.length;
+      }
+    } else {
+      // Numeric aggregations: sum, avg, min, max
+      const numericVals: number[] = [];
+      for (const r of records) {
+        if (!targetField) continue;
+        const num = parseNumericValue(r[targetField]);
+        if (num !== null) numericVals.push(num);
+      }
+      aggValue = aggregateValues(numericVals, aggregation);
     }
-    const aggValue = aggregateValues(numericVals, aggregation);
+
+    const labelName = targetField || 'Records';
     return {
-      data: [{ name: yField || xField || 'Total', value: aggValue }],
+      data: [{ name: labelName, value: aggValue ?? 0 }],
       kpiValue: aggValue,
-      kpiLabel: `${aggregation.toUpperCase()} of ${yField || 'records'}`,
+      kpiLabel: `${aggregation.toUpperCase()} of ${labelName}`,
       seriesKeys: ['value']
     };
   }
 
-  // Table Visual
+  // 2. Table Visual
   if (type === 'table') {
-    // Return sample rows sorted by yField if available
     const tableRows = records.slice(0, topN || 50).map((r, idx) => ({
       _id: idx,
       ...r
@@ -179,13 +215,13 @@ export function processVisualData(
     };
   }
 
-  // Scatter Plot
+  // 3. Scatter Plot
   if (type === 'scatter') {
     const points: any[] = [];
     for (const r of records.slice(0, topN || 100)) {
-      const xVal = parseFloat(r[xField]);
-      const yVal = parseFloat(r[yField]);
-      if (!isNaN(xVal) && !isNaN(yVal)) {
+      const xVal = parseNumericValue(r[xField]);
+      const yVal = parseNumericValue(r[yField]);
+      if (xVal !== null && yVal !== null) {
         points.push({
           x: xVal,
           y: yVal,
@@ -200,33 +236,41 @@ export function processVisualData(
     };
   }
 
-  // Grouped / Standard Aggregation (Bar, Line, Area, Pie, Donut)
+  // 4. Grouped Breakdown by groupField (Multi-series)
   if (groupField) {
-    // Multi-series breakdown by groupField
     const nestedGroups: Record<string, Record<string, number[]>> = {};
     const allGroupKeys = new Set<string>();
 
     for (const r of records) {
       const xVal = String(r[xField] ?? 'Unknown');
       const gVal = String(r[groupField] ?? 'Other');
-      const yVal = parseFloat(r[yField]);
 
       if (!nestedGroups[xVal]) nestedGroups[xVal] = {};
       if (!nestedGroups[xVal][gVal]) nestedGroups[xVal][gVal] = [];
 
-      if (!isNaN(yVal)) {
-        nestedGroups[xVal][gVal].push(yVal);
+      if (aggregation === 'count') {
+        const rawY = r[yField];
+        if (rawY !== null && rawY !== undefined && String(rawY).trim() !== '') {
+          nestedGroups[xVal][gVal].push(1);
+        }
+      } else {
+        const yVal = parseNumericValue(r[yField]);
+        if (yVal !== null) {
+          nestedGroups[xVal][gVal].push(yVal);
+        }
       }
       allGroupKeys.add(gVal);
     }
 
-    const seriesKeys = Array.from(allGroupKeys).slice(0, 6); // Max 6 series for clean display
+    const seriesKeys = Array.from(allGroupKeys).slice(0, 6);
     let chartData = Object.entries(nestedGroups).map(([xVal, groupObj]) => {
       const rowObj: any = { name: xVal };
       let rowTotal = 0;
       for (const gKey of seriesKeys) {
         const valArr = groupObj[gKey] || [];
-        const aggVal = aggregateValues(valArr, aggregation);
+        const aggVal = aggregation === 'count' 
+          ? valArr.length 
+          : (aggregateValues(valArr, aggregation) ?? 0);
         rowObj[gKey] = Math.round(aggVal * 100) / 100;
         rowTotal += aggVal;
       }
@@ -234,7 +278,6 @@ export function processVisualData(
       return rowObj;
     });
 
-    // Sort descending by total
     chartData.sort((a, b) => b._total - a._total);
 
     if (topN && topN > 0) {
@@ -246,30 +289,36 @@ export function processVisualData(
       seriesKeys
     };
   } else {
-    // Single-series breakdown by xField
+    // 5. Single-series Breakdown by xField
     const groups: Record<string, number[]> = {};
 
     for (const r of records) {
       const xVal = String(r[xField] ?? 'Unknown');
-      const yVal = parseFloat(r[yField]);
-
       if (!groups[xVal]) groups[xVal] = [];
-      if (!isNaN(yVal)) {
-        groups[xVal].push(yVal);
-      } else if (aggregation === 'count') {
-        groups[xVal].push(1);
+
+      if (aggregation === 'count') {
+        const rawY = r[yField];
+        if (!yField || (rawY !== null && rawY !== undefined && String(rawY).trim() !== '')) {
+          groups[xVal].push(1);
+        }
+      } else {
+        const yVal = parseNumericValue(r[yField]);
+        if (yVal !== null) {
+          groups[xVal].push(yVal);
+        }
       }
     }
 
     let chartData = Object.entries(groups).map(([xVal, valArr]) => {
-      const aggVal = aggregateValues(valArr, aggregation);
+      const aggVal = aggregation === 'count' 
+        ? valArr.length 
+        : (aggregateValues(valArr, aggregation) ?? 0);
       return {
         name: xVal,
         value: Math.round(aggVal * 100) / 100
       };
     });
 
-    // Sort descending
     chartData.sort((a, b) => b.value - a.value);
 
     if (topN && topN > 0) {
