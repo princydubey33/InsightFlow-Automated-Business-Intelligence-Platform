@@ -449,3 +449,37 @@ class TestAIChatbotServiceAndProviderIntegration:
             assert "First query" in sent_payload["contents"][0]["parts"][0]["text"]
             assert "Second query concatenated" in sent_payload["contents"][0]["parts"][0]["text"]
 
+    def test_groq_candidate_model_fallback_on_404(self):
+        """When the primary Groq model returns 404, the client tries the next candidate model."""
+        from backend.app.services.ai_service import _call_llm_api
+        messages = [{"role": "user", "content": "hello"}]
+
+        resp_404 = MagicMock(status_code=404, json=lambda: {"error": {"message": "The model 'llama-3.1-8b-instant' does not exist"}})
+        resp_200 = MagicMock(status_code=200, json=lambda: {"choices": [{"message": {"content": "Groq fallback response"}}]})
+
+        with patch("httpx.Client.post", side_effect=[resp_404, resp_200]) as mock_post:
+            with patch.dict(os.environ, {"AI_MODEL": "llama-3.1-8b-instant"}):
+                res = _call_llm_api(messages, "gsk_fake", "groq")
+                assert res == "Groq fallback response"
+                assert mock_post.call_count == 2
+
+    def test_multi_provider_fallback_groq_to_gemini(self, tmp_path):
+        """When Groq fails with an error and Gemini is configured, it automatically falls back to Gemini."""
+        csv_file = tmp_path / "mock.csv"
+        pd.DataFrame({"val": [10, 20]}).to_csv(csv_file, index=False)
+        dataset = Dataset(id=10, filename="mock.csv", original_filename="mock.csv", file_type="text/csv", user_id=1)
+
+        def mock_call_llm(messages, api_key, provider):
+            if provider == "groq":
+                raise Exception("Groq endpoint unreachable or model missing")
+            elif provider == "gemini":
+                return "Gemini answered your data question!"
+            raise Exception("Unknown provider")
+
+        with patch.dict(os.environ, {"GROQ_API_KEY": "gsk_broken", "GEMINI_API_KEY": "AIzaSy_working"}):
+            with patch("backend.app.services.ai_service._call_llm_api", side_effect=mock_call_llm):
+                res = answer_dataset_question("How many rows?", dataset, str(csv_file))
+                assert "Gemini answered your data question!" in res["answer"]
+                assert "InsightFlow AI (Gemini)" in res["sources"]
+
+
