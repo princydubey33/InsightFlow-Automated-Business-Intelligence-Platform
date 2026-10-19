@@ -111,10 +111,31 @@ export default function InsightsPage() {
   // Chat UI state connected to real POST /api/datasets/{id}/ask API
   const [query, setQuery] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [suggestionLang, setSuggestionLang] = useState<'hinglish' | 'english'>('hinglish');
+
+  const suggestions = {
+    hinglish: [
+      "Total revenue kitna hai?",
+      "Sabse zyada bikne wala product kaunsa hai?",
+      "Dataset me missing values kitne hain?",
+      "Kaunsi city se sabse zyada revenue aaya?",
+      "Average order value kya hai?",
+      "Highest aur lowest sales kis category me hai?"
+    ],
+    english: [
+      "What is the total revenue?",
+      "Which product has the highest sales?",
+      "Are there any missing or duplicate values?",
+      "Which city generated the most revenue?",
+      "What is the average order value?",
+      "Break down sales by product category."
+    ]
+  };
+
   const [chat, setChat] = useState<{ role: 'user' | 'ai'; text: string; sources?: string[] }[]>([
     { 
       role: 'ai', 
-      text: 'Hello! I am your InsightFlow AI assistant. Aap mujhse English ya Hinglish me apne dataset ke baare me kuch bhi puch sakte hain (e.g. "Total revenue kitna hai?", "Which product has the highest sales?", "Missing values kitne hain?").' 
+      text: 'Hello! I am your InsightFlow AI assistant. Aap mujhse English ya Hinglish me apne dataset ke baare me kuch bhi puch sakte hain (e.g. "Total revenue kitna hai?", "Which product has the highest sales?", "Missing values kitne hain?"). Niche diye gaye suggestions par click karke bhi puch sakte hain!' 
     }
   ]);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -188,9 +209,7 @@ export default function InsightsPage() {
     scrollToBottom();
   }, [chat, isTyping]);
 
-  const handleAsk = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const userQuestion = query.trim();
+  const submitQuestion = async (userQuestion: string) => {
     if (!userQuestion || isTyping) return;
 
     if (!selectedDatasetId) {
@@ -251,6 +270,11 @@ export default function InsightsPage() {
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleAsk = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitQuestion(query.trim());
   };
 
   return (
@@ -460,6 +484,54 @@ export default function InsightsPage() {
             )}
           </AnimatePresence>
           <div ref={chatEndRef} />
+        </div>
+
+        {/* Suggestion Chips */}
+        <div className="px-3 pt-2.5 pb-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-brand" />
+              Suggested Queries
+            </span>
+            <div className="flex items-center bg-slate-200/80 dark:bg-slate-800 p-0.5 rounded-lg text-[10px] font-medium">
+              <button
+                type="button"
+                onClick={() => setSuggestionLang('hinglish')}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  suggestionLang === 'hinglish'
+                    ? 'bg-white dark:bg-slate-700 text-brand dark:text-white shadow-xs font-semibold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                }`}
+              >
+                Hinglish
+              </button>
+              <button
+                type="button"
+                onClick={() => setSuggestionLang('english')}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  suggestionLang === 'english'
+                    ? 'bg-white dark:bg-slate-700 text-brand dark:text-white shadow-xs font-semibold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                }`}
+              >
+                English
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
+            {suggestions[suggestionLang].map((promptText, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => submitQuestion(promptText)}
+                disabled={isTyping}
+                title={promptText}
+                className="whitespace-nowrap px-2.5 py-1 text-xs rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-brand hover:text-brand dark:hover:border-brand dark:hover:text-brand transition-all flex-shrink-0 disabled:opacity-50 shadow-xs cursor-pointer"
+              >
+                {promptText}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="p-4 border-t border-slate-100 dark:border-slate-800">
