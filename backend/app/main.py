@@ -37,6 +37,13 @@ def ensure_schema_migrations():
                     else:
                         conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires DATETIME"))
                 conn.commit()
+
+        if "datasets" in inspector.get_table_names():
+            ds_columns = [col["name"] for col in inspector.get_columns("datasets")]
+            with engine.connect() as conn:
+                if "file_content" not in ds_columns:
+                    conn.execute(text("ALTER TABLE datasets ADD COLUMN file_content TEXT"))
+                conn.commit()
     except Exception as e:
         print(f"Database schema migration warning: {e}")
 
@@ -83,9 +90,13 @@ async def upload_dataset(
     saved_filename = f"{file_id}{ext}"
     file_path = os.path.join(settings.upload_dir, saved_filename)
     
+    import base64
     try:
+        content_bytes = await file.read()
+        os.makedirs(settings.upload_dir, exist_ok=True)
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(content_bytes)
+        b64_content = base64.b64encode(content_bytes).decode("utf-8")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not save file: {e}")
     
@@ -103,7 +114,8 @@ async def upload_dataset(
         row_count=row_count,
         column_count=column_count,
         status="processed",
-        user_id=user_id
+        user_id=user_id,
+        file_content=b64_content
     )
     
     db.add(db_dataset)

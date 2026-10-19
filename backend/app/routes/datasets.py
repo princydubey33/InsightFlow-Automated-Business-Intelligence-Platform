@@ -45,6 +45,22 @@ def get_dataset(dataset_id: int, db: Session = Depends(get_db), user_id: Optiona
     verify_dataset_access(dataset, user_id)
     return dataset
 
+import base64
+from ..services.dataset_service import analyze_file
+
+def ensure_dataset_file(dataset: Dataset) -> str:
+    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    if not os.path.exists(file_path):
+        if getattr(dataset, "file_content", None):
+            os.makedirs(settings.upload_dir, exist_ok=True)
+            try:
+                raw_bytes = base64.b64decode(dataset.file_content)
+            except Exception:
+                raw_bytes = dataset.file_content.encode("utf-8")
+            with open(file_path, "wb") as f:
+                f.write(raw_bytes)
+    return file_path
+
 @router.delete("/{dataset_id}")
 def delete_dataset(dataset_id: int, db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id)):
     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
@@ -76,8 +92,12 @@ def get_dataset_quality(dataset_id: int, db: Session = Depends(get_db), user_id:
         raise HTTPException(status_code=404, detail="Dataset not found")
     verify_dataset_access(dataset, user_id)
     
-    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    file_path = ensure_dataset_file(dataset)
     report_path = f"{file_path}.quality.json"
+    
+    # Auto-regenerate quality report if file exists but cache was cleared during redeploy
+    if not os.path.exists(report_path) and os.path.exists(file_path):
+        analyze_file(file_path, dataset.file_type)
     
     if os.path.exists(report_path):
         with open(report_path, "r") as f:
@@ -85,7 +105,7 @@ def get_dataset_quality(dataset_id: int, db: Session = Depends(get_db), user_id:
             log_activity(db, user_id, dataset.id, dataset.original_filename, "Data Quality", "success", {"score": data.get("quality_score")})
             return data
     else:
-        raise HTTPException(status_code=404, detail="Quality report not found")
+        raise HTTPException(status_code=404, detail="Quality report not found. Please re-upload your dataset via Upload Data.")
 
 @router.get("/{dataset_id}/analytics")
 def get_dataset_analytics(dataset_id: int, db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id)):
@@ -94,9 +114,9 @@ def get_dataset_analytics(dataset_id: int, db: Session = Depends(get_db), user_i
         raise HTTPException(status_code=404, detail="Dataset not found")
     verify_dataset_access(dataset, user_id)
     
-    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    file_path = ensure_dataset_file(dataset)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Dataset file not found")
+        raise HTTPException(status_code=404, detail="Dataset file not found on server session. Please re-upload your file via Upload Data.")
         
     analytics = generate_analytics(file_path, dataset.file_type)
     if "error" in analytics:
@@ -115,9 +135,9 @@ def get_dataset_insights(dataset_id: int, db: Session = Depends(get_db), user_id
         raise HTTPException(status_code=404, detail="Dataset not found")
     verify_dataset_access(dataset, user_id)
     
-    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    file_path = ensure_dataset_file(dataset)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Dataset file not found")
+        raise HTTPException(status_code=404, detail="Dataset file not found on server session. Please re-upload your file via Upload Data.")
         
     insights = generate_insights(file_path, dataset.file_type)
     log_activity(db, user_id, dataset.id, dataset.original_filename, "Insights", "success", {"insights_generated": len(insights)})
@@ -130,9 +150,9 @@ def get_dataset_report(dataset_id: int, db: Session = Depends(get_db), user_id: 
         raise HTTPException(status_code=404, detail="Dataset not found")
     verify_dataset_access(dataset, user_id)
     
-    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    file_path = ensure_dataset_file(dataset)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Dataset file not found")
+        raise HTTPException(status_code=404, detail="Dataset file not found on server session. Please re-upload your file via Upload Data.")
         
     report = generate_report(dataset, file_path)
     # Save a snapshot of the report in the activity log
@@ -149,9 +169,9 @@ def ask_dataset_question(dataset_id: int, request: AskQuestionRequest, db: Sessi
         raise HTTPException(status_code=404, detail="Dataset not found")
     verify_dataset_access(dataset, user_id)
     
-    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    file_path = ensure_dataset_file(dataset)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Dataset file not found")
+        raise HTTPException(status_code=404, detail="Dataset file not found on server session. Please re-upload your file via Upload Data to continue.")
         
     try:
         history_dicts = [{"role": msg.role, "content": msg.content} for msg in request.history] if request.history else []
@@ -171,16 +191,16 @@ def fix_dataset_issue(dataset_id: int, request: FixIssueRequest, db: Session = D
         raise HTTPException(status_code=404, detail="Dataset not found")
     verify_dataset_access(dataset, user_id)
     
-    file_path = os.path.join(settings.upload_dir, dataset.filename)
+    file_path = ensure_dataset_file(dataset)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Dataset file not found")
+        raise HTTPException(status_code=404, detail="Dataset file not found on server session. Please re-upload your file via Upload Data.")
         
     success = apply_fix(file_path, dataset.file_type, request.issue_id, request.issue_type, request.column)
     if not success:
         log_activity(db, user_id, dataset.id, dataset.original_filename, "Data Cleaning", "error", {"issue_type": request.issue_type})
         raise HTTPException(status_code=500, detail="Failed to apply fix to dataset")
     
-    # Update dataset row count and file size in database to reflect changes
+    # Update dataset row count, file size, and file_content in database to reflect changes
     import pandas as pd
     try:
         if dataset.file_type == 'text/csv' or file_path.endswith('.csv'):
@@ -190,6 +210,8 @@ def fix_dataset_issue(dataset_id: int, request: FixIssueRequest, db: Session = D
         dataset.row_count = len(updated_df)
         dataset.column_count = len(updated_df.columns)
         dataset.file_size = os.path.getsize(file_path)
+        with open(file_path, "rb") as f:
+            dataset.file_content = base64.b64encode(f.read()).decode("utf-8")
         db.commit()
     except Exception:
         pass

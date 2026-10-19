@@ -356,6 +356,25 @@ class TestDatabasePersistenceAndPostgresCompatibility:
         """ensure_schema_migrations should inspect existing tables and run cleanly without PRAGMA errors."""
         ensure_schema_migrations()
 
+    def test_ensure_dataset_file_restores_from_db(self, tmp_path):
+        """ensure_dataset_file automatically recovers the file onto disk from database base64 content if disk was wiped."""
+        import base64
+        from backend.app.routes.datasets import ensure_dataset_file
+        from backend.app.config import settings
+
+        raw_csv = "col_a,col_b\n1,2\n3,4\n"
+        b64_str = base64.b64encode(raw_csv.encode("utf-8")).decode("utf-8")
+        test_fn = "ephemeral_test.csv"
+        ds = Dataset(id=88, filename=test_fn, original_filename="test.csv", file_type="text/csv", file_content=b64_str)
+
+        with patch.object(settings, "upload_dir", str(tmp_path)):
+            recovered_path = ensure_dataset_file(ds)
+            assert os.path.exists(recovered_path)
+            with open(recovered_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            assert content == raw_csv
+
+
 
 class TestAIChatbotServiceAndProviderIntegration:
     def test_missing_api_key_returns_clear_guidance(self, tmp_path):

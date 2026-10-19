@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float
+from sqlalchemy import Column, Integer, String, DateTime, Float, Text
 from ..database import Base
 from datetime import datetime
 
@@ -15,3 +15,5 @@ class Dataset(Base):
     column_count = Column(Integer, nullable=True)
     status = Column(String, default="uploaded")
     user_id = Column(Integer, nullable=True) # Adding user_id for isolation
+    file_content = Column(Text, nullable=True) # Base64 encoded file content to persist across ephemeral restarts
+

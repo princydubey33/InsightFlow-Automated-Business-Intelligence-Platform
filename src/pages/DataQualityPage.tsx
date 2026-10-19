@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ShieldCheck, AlertTriangle, ShieldAlert, CheckCircle, Info, Database, Hash, List, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import AnimatedCount from '../components/AnimatedCount';
 import { API_BASE_URL } from '../config';
 import { authFetch } from '../utils/api';
 
@@ -141,16 +140,14 @@ export default function DataQualityPage() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-bold text-slate-900 dark:text-white">
-              <AnimatedCount value={qualityData.quality_score} duration={1.5} />
+              {qualityData.quality_score}
             </span>
             <span className="text-sm font-medium text-slate-500 dark:text-slate-500">/ 100</span>
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
-            <motion.div 
-              initial={{ width: 0 }} 
-              animate={{ width: `${qualityData.quality_score}%` }} 
-              transition={{ duration: 0.5, ease: "easeOut" }} 
-              className="bg-brand h-full rounded-full" 
+            <div 
+              style={{ width: `${qualityData.quality_score}%` }} 
+              className="bg-brand h-full rounded-full transition-all duration-300" 
             />
           </div>
         </motion.div>
@@ -169,7 +166,7 @@ export default function DataQualityPage() {
             </div>
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1 truncate">{stat.label}</p>
             <h3 className="text-2xl font-bold text-slate-900 dark:text-white truncate">
-              <AnimatedCount value={stat.value as number} formatter={(v) => v.toLocaleString()} />
+              {Number(stat.value ?? 0).toLocaleString()}
             </h3>
           </motion.div>
         ))}
