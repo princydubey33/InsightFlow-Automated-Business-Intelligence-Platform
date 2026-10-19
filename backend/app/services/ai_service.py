@@ -83,15 +83,15 @@ def get_all_ai_credentials() -> List[tuple[str, str]]:
         "openai": openai_key
     }
 
-    if configured_provider == "gemini":
-        order = ["gemini", "groq", "openai"]
+    if configured_provider == "groq":
+        order = ["groq", "gemini", "openai"]
     elif configured_provider == "openai":
         order = ["openai", "gemini", "groq"]
-    elif configured_provider == "groq":
-        order = ["groq", "gemini", "openai"]
+    elif configured_provider == "gemini":
+        order = ["gemini", "groq", "openai"]
     else:
-        # Default auto order: Groq (ultra fast) -> Gemini (free tier) -> OpenAI
-        order = ["groq", "gemini", "openai"]
+        # Default auto order: Gemini (ultra fast 0.8s response) -> Groq -> OpenAI
+        order = ["gemini", "groq", "openai"]
 
     providers = []
     for p in order:
@@ -122,7 +122,7 @@ def _call_groq_api(messages: List[Dict[str, str]], api_key: str) -> str:
             candidate_models.append(m)
 
     last_err: Optional[Exception] = None
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=6.0) as client:
         i = 0
         while i < len(candidate_models):
             model = candidate_models[i]
@@ -192,7 +192,7 @@ def _call_gemini_api(messages: List[Dict[str, str]], api_key: str) -> str:
         }
 
     last_err: Optional[Exception] = None
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=15.0) as client:
         i = 0
         while i < len(candidate_models):
             model = candidate_models[i]
