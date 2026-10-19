@@ -53,8 +53,10 @@ def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(ge
     db_user = db.query(models.User).filter(models.User.email.ilike(email_clean)).first()
     
     if not db_user:
-        # Prevent email enumeration while returning informative response
-        return {"message": f"If an account exists for {req.email}, reset instructions have been sent."}
+        raise HTTPException(
+            status_code=404,
+            detail=f"No account found with email '{req.email}'. Please register on the Signup page first."
+        )
     
     # Generate cryptographically secure token
     raw_token = secrets.token_urlsafe(32)
@@ -81,9 +83,11 @@ def forgot_password(req: schemas.ForgotPasswordRequest, db: Session = Depends(ge
         db_user.reset_token = None
         db_user.reset_token_expires = None
         db.commit()
+        from ..services.email_service import get_last_email_error
+        err_detail = get_last_email_error()
         raise HTTPException(
             status_code=500, 
-            detail="Failed to send password reset email. Please ensure SMTP configuration is configured in the server environment."
+            detail=f"Failed to send password reset email. Details: {err_detail}"
         )
         
     return {"message": f"Password reset instructions sent to {db_user.email}."}

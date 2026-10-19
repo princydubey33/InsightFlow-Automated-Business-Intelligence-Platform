@@ -1,3 +1,4 @@
+import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -7,7 +8,16 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+last_email_error = None
+
+def get_last_email_error() -> str:
+    global last_email_error
+    return last_email_error or "Email delivery failed. Please check SMTP / Resend configuration."
+
 def send_reset_email(to_email: str, reset_link: str) -> bool:
+    global last_email_error
+    last_email_error = None
+
     text = (
         f"You requested a password reset for your InsightFlow account.\n\n"
         f"Click the link below or copy and paste it into your browser to reset your password:\n"
@@ -46,9 +56,11 @@ def send_reset_email(to_email: str, reset_link: str) -> bool:
     resend_key = settings.resend_api_key or (settings.smtp_password if settings.smtp_password.startswith("re_") else "")
     if resend_key:
         try:
+            # Resend free sandbox requires onboarding@resend.dev unless a custom verified domain is provided
             sender = "InsightFlow <onboarding@resend.dev>"
-            if settings.smtp_from and not settings.smtp_from.endswith("@gmail.com"):
-                sender = f"InsightFlow <{settings.smtp_from}>"
+            custom_from = os.getenv("RESEND_FROM", "").strip()
+            if custom_from:
+                sender = custom_from
 
             resp = httpx.post(
                 "https://api.resend.com/emails",
@@ -69,9 +81,11 @@ def send_reset_email(to_email: str, reset_link: str) -> bool:
                 logger.info(f"Password reset email delivered to {to_email} via Resend API (HTTPS)")
                 return True
             else:
-                logger.error(f"Resend API error ({resp.status_code}): {resp.text}")
+                last_email_error = f"Resend API Error ({resp.status_code}): {resp.text}"
+                logger.error(last_email_error)
         except Exception as e:
-            logger.error(f"Resend API dispatch error to {to_email}: {e}")
+            last_email_error = f"Resend API Connection Error: {str(e)}"
+            logger.error(last_email_error)
 
     # Check for Brevo API key (works on port 443)
     brevo_key = settings.brevo_api_key or (settings.smtp_password if settings.smtp_password.startswith("xkeysib-") else "")
