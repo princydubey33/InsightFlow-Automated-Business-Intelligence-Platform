@@ -16,7 +16,8 @@ import {
   X,
   LogOut,
   Check,
-  History
+  History,
+  Sparkles
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -25,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
   { name: 'Overview', path: '/app/dashboard', icon: LayoutDashboard },
+  { name: 'Studio', path: '/app/builder', icon: Sparkles },
   { name: 'Upload Data', path: '/app/upload', icon: Upload },
   { name: 'Data Quality', path: '/app/quality', icon: DatabaseZap },
   { name: 'Analytics', path: '/app/analytics', icon: BarChart3 },
@@ -36,6 +38,7 @@ const navItems = [
 
 const searchItems = [
   { name: 'Dashboard Overview', path: '/app/dashboard', type: 'Page' },
+  { name: 'Dashboard Studio', path: '/app/builder', type: 'Page' },
   { name: 'Upload Data', path: '/app/upload', type: 'Page' },
   { name: 'Data Quality', path: '/app/quality', type: 'Page' },
   { name: 'Analytics', path: '/app/analytics', type: 'Page' },
@@ -52,6 +55,7 @@ export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const isBuilder = location.pathname.startsWith('/app/builder');
 
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -116,7 +120,7 @@ export default function DashboardLayout() {
 
       {/* Sidebar - Floating Glass Panel */}
       <div className={twMerge(
-        "fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto flex lg:w-auto",
+        "fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto flex lg:w-auto print:hidden",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <aside className="w-64 glass-panel m-4 flex flex-col h-[calc(100vh-2rem)] overflow-hidden">
@@ -175,8 +179,14 @@ export default function DashboardLayout() {
 
       {/* Main Content */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Topbar */}
-        <header className="flex items-center justify-between h-20 px-4 sm:px-6 lg:px-8 z-10 mx-4 mt-4 glass-panel rounded-2xl shrink-0">
+        {isBuilder ? (
+          <main className="flex-1 overflow-hidden h-full w-full">
+            <Outlet />
+          </main>
+        ) : (
+          <>
+            {/* Topbar */}
+            <header className="flex items-center justify-between h-20 px-4 sm:px-6 lg:px-8 z-10 mx-4 mt-4 glass-panel rounded-2xl shrink-0">
           <div className="flex items-center gap-4">
             <button 
               className="lg:hidden p-2 -ml-2 text-slate-500 dark:text-slate-400 rounded-xl hover:bg-white/50 dark:hover:bg-slate-800/50 transition-colors"
@@ -375,6 +385,8 @@ export default function DashboardLayout() {
             </AnimatePresence>
           </div>
         </main>
+          </>
+        )}
       </div>
     </div>
   );

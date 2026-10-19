@@ -13,6 +13,7 @@ import InsightsPage from './pages/InsightsPage';
 import ReportsPage from './pages/ReportsPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
+import DashboardBuilderPage from './pages/DashboardBuilderPage';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 
@@ -44,6 +45,7 @@ function AnimatedRoutes() {
         <Route path="/app" element={<PageWrapper><DashboardLayout /></PageWrapper>}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardOverview />} />
+          <Route path="builder" element={<DashboardBuilderPage />} />
           <Route path="upload" element={<UploadDataPage />} />
           <Route path="quality" element={<DataQualityPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />

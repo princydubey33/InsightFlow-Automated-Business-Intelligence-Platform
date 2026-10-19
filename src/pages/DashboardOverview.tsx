@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowUpRight, ArrowDownRight, DollarSign, ShoppingCart, Users, RefreshCcw } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, DollarSign, ShoppingCart, Users, RefreshCcw, Sparkles } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend, PieChart, Pie, Cell, ComposedChart, Line
@@ -8,7 +8,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
 import AnimatedCount from '../components/AnimatedCount';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 import { authFetch } from '../utils/api';
 
@@ -35,6 +35,7 @@ export default function DashboardOverview() {
   const { user } = useAuth();
   const isDark = theme === 'dark';
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +100,17 @@ export default function DashboardOverview() {
           <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">Overview</h2>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">Welcome back{user?.name ? ', ' + user.name : ''}! Here's your data at a glance.</p>
         </div>
-        <div className="flex glass-panel p-1 border-white/60 dark:border-slate-800/80">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/app/builder')}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            title="Open Interactive Self-Service Dashboard Studio"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
+            <span>Design Studio</span>
+          </button>
+
+          <div className="flex glass-panel p-1 border-white/60 dark:border-slate-800/80">
           {['Today', '7 Days', '30 Days', '90 Days'].map((range) => (
             <motion.button
               
@@ -115,6 +126,7 @@ export default function DashboardOverview() {
               {range}
             </motion.button>
           ))}
+        </div>
         </div>
       </div>
 

@@ -11,7 +11,8 @@ from .database import engine, Base, get_db
 from .models import dataset as dataset_models
 from .models import user as user_models
 from .models import activity as activity_models
-from .routes import datasets, auth, activity
+from .models import dashboard as dashboard_models
+from .routes import datasets, auth, activity, dashboards
 from .schemas.dataset import DatasetResponse
 from .services.dataset_service import analyze_file
 from .services.activity_service import log_activity
@@ -21,6 +22,7 @@ from fastapi import Header
 user_models.Base.metadata.create_all(bind=engine)
 dataset_models.Base.metadata.create_all(bind=engine)
 activity_models.Base.metadata.create_all(bind=engine)
+dashboard_models.Base.metadata.create_all(bind=engine)
 
 from sqlalchemy import inspect, text
 def ensure_schema_migrations():
@@ -137,3 +139,4 @@ async def upload_dataset(
 app.include_router(datasets.router)
 app.include_router(auth.router)
 app.include_router(activity.router)
+app.include_router(dashboards.router)

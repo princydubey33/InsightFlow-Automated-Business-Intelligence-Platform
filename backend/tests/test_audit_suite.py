@@ -520,4 +520,115 @@ class TestAIChatbotServiceAndProviderIntegration:
                 assert mock_post.call_count == 2
 
 
+class TestDashboardBuilderAPI:
+    def test_dashboard_crud_and_user_isolation(self):
+        db = TestingSessionLocal()
+        u1 = User(name="User 1", email="u1_bi@test.com", password="pwd", role="User")
+        u2 = User(name="User 2", email="u2_bi@test.com", password="pwd", role="User")
+        db.add_all([u1, u2])
+        db.commit()
+        db.refresh(u1)
+        db.refresh(u2)
+        u1_id = str(u1.id)
+        u2_id = str(u2.id)
+
+        ds1 = Dataset(filename="ds1.csv", original_filename="ds1.csv", file_type="text/csv", user_id=u1.id, status="processed")
+        db.add(ds1)
+        db.commit()
+        db.refresh(ds1)
+        ds1_id = ds1.id
+        db.close()
+
+        config_payload = {
+            "title": "Quarterly Executive KPI Dashboard",
+            "dataset_id": ds1_id,
+            "config": json.dumps({"theme": "powerbi", "visuals": [{"id": "v1", "type": "bar"}]}),
+            "is_default": True
+        }
+
+        # 1. User 1 creates dashboard
+        create_res = client.post("/api/dashboards", json=config_payload, headers={"X-User-Id": u1_id})
+        assert create_res.status_code == 201
+        dash_data = create_res.json()
+        dash_id = dash_data["id"]
+        assert dash_data["title"] == "Quarterly Executive KPI Dashboard"
+        assert dash_data["user_id"] == int(u1_id)
+
+        # 2. User 1 can list their dashboards
+        list_res = client.get("/api/dashboards", headers={"X-User-Id": u1_id})
+        assert list_res.status_code == 200
+        ids = [d["id"] for d in list_res.json()]
+        assert dash_id in ids
+
+        # 3. User 2 cannot access or list User 1's dashboard
+        u2_list = client.get("/api/dashboards", headers={"X-User-Id": u2_id})
+        assert u2_list.status_code == 200
+        assert dash_id not in [d["id"] for d in u2_list.json()]
+
+        # 4. User 2 getting User 1's dashboard directly returns 403 Forbidden
+        u2_get = client.get(f"/api/dashboards/{dash_id}", headers={"X-User-Id": u2_id})
+        assert u2_get.status_code == 403
+
+        # 5. User 2 modifying User 1's dashboard returns 403 Forbidden
+        u2_put = client.put(f"/api/dashboards/{dash_id}", json={"title": "Hacked"}, headers={"X-User-Id": u2_id})
+        assert u2_put.status_code == 403
+
+        # 6. User 1 updates their dashboard successfully
+        u1_put = client.put(
+            f"/api/dashboards/{dash_id}",
+            json={"title": "Updated Executive BI Dashboard", "is_default": True},
+            headers={"X-User-Id": u1_id}
+        )
+        assert u1_put.status_code == 200
+        assert u1_put.json()["title"] == "Updated Executive BI Dashboard"
+
+        # 7. User 2 deleting User 1's dashboard returns 403 Forbidden
+        u2_del = client.delete(f"/api/dashboards/{dash_id}", headers={"X-User-Id": u2_id})
+        assert u2_del.status_code == 403
+
+        # 8. User 1 deletes their dashboard
+        u1_del = client.delete(f"/api/dashboards/{dash_id}", headers={"X-User-Id": u1_id})
+        assert u1_del.status_code == 200
+
+    def test_get_dataset_data_endpoint(self, tmp_path):
+        db = TestingSessionLocal()
+        u1 = User(name="User 1", email="data_u1@test.com", password="pwd", role="User")
+        u2 = User(name="User 2", email="data_u2@test.com", password="pwd", role="User")
+        db.add_all([u1, u2])
+        db.commit()
+        db.refresh(u1)
+        db.refresh(u2)
+        u1_id = str(u1.id)
+        u2_id = str(u2.id)
+
+        csv_file = tmp_path / "mock_dataset.csv"
+        df = pd.DataFrame({
+            "Category": ["Electronics", "Clothing", "Home"],
+            "Revenue": [1200.0, 450.0, 890.0],
+            "OrderDate": ["2026-01-15", "2026-02-10", "2026-03-05"]
+        })
+        df.to_csv(csv_file, index=False)
+
+        ds = Dataset(filename="mock_dataset.csv", original_filename="mock_dataset.csv", file_type="text/csv", user_id=u1.id, status="processed")
+        db.add(ds)
+        db.commit()
+        db.refresh(ds)
+        ds_id = ds.id
+        db.close()
+
+        with patch("backend.app.routes.datasets.ensure_dataset_file", return_value=str(csv_file)):
+            # User 1 can fetch data
+            res = client.get(f"/api/datasets/{ds_id}/data", headers={"X-User-Id": u1_id})
+            assert res.status_code == 200
+            data = res.json()
+            assert "columns" in data
+            assert "Category" in data["columns"]
+            assert data["column_types"]["Revenue"] == "numeric"
+            assert len(data["records"]) == 3
+
+            # User 2 cannot access User 1's dataset
+            res_u2 = client.get(f"/api/datasets/{ds_id}/data", headers={"X-User-Id": u2_id})
+            assert res_u2.status_code == 403
+
+
 

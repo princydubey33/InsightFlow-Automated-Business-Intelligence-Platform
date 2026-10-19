@@ -235,3 +235,66 @@ def fix_dataset_issue(dataset_id: int, request: FixIssueRequest, db: Session = D
         
     log_activity(db, user_id, dataset.id, dataset.original_filename, "Data Cleaning", "success", {"issue_type": request.issue_type})
     return {"success": True, "message": f"Successfully applied fix for {request.issue_type}"}
+
+@router.get("/{dataset_id}/data")
+def get_dataset_data(dataset_id: int, limit: int = 5000, db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id)):
+    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    verify_dataset_access(dataset, user_id)
+    
+    file_path = ensure_dataset_file(dataset, db)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Dataset file not found on server session. Please re-upload your file via Upload Data.")
+        
+    import pandas as pd
+    import numpy as np
+
+    try:
+        if dataset.file_type == 'text/csv' or file_path.endswith('.csv'):
+            try:
+                df = pd.read_csv(file_path)
+            except UnicodeDecodeError:
+                try:
+                    df = pd.read_csv(file_path, encoding='utf-16')
+                except UnicodeDecodeError:
+                    df = pd.read_csv(file_path, encoding='latin1')
+        else:
+            df = pd.read_excel(file_path)
+
+        columns = [str(c) for c in df.columns]
+        column_types = {}
+        for c in df.columns:
+            c_str = str(c)
+            if pd.api.types.is_numeric_dtype(df[c]):
+                column_types[c_str] = "numeric"
+            elif pd.api.types.is_datetime64_any_dtype(df[c]):
+                column_types[c_str] = "date"
+            else:
+                sample = df[c].dropna().head(10).astype(str)
+                is_date = False
+                if len(sample) > 0 and any(k in c_str.lower() for k in ["date", "time", "year", "month"]):
+                    try:
+                        pd.to_datetime(sample)
+                        is_date = True
+                    except Exception:
+                        pass
+                column_types[c_str] = "date" if is_date else "categorical"
+
+        clean_df = df.head(limit).replace({np.nan: None})
+        records = clean_df.to_dict(orient="records")
+        # Ensure dict keys are strings
+        sanitized_records = []
+        for r in records:
+            sanitized_records.append({str(k): (float(v) if isinstance(v, (np.floating, np.integer)) else v) for k, v in r.items()})
+
+        return {
+            "dataset_id": dataset.id,
+            "filename": dataset.original_filename,
+            "total_rows": len(df),
+            "columns": columns,
+            "column_types": column_types,
+            "records": sanitized_records
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading dataset data: {str(e)}")
