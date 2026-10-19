@@ -283,10 +283,10 @@ class TestDatabasePersistenceAndPostgresCompatibility:
         """Render supplies postgres:// which must be normalized to postgresql+psycopg2://."""
         raw_render_url = "postgres://insightflow_user:secret_pass@dpg-abc1234-a.render.com/insightflow_db"
         normalized = normalize_database_url(raw_render_url)
-        assert normalized == "postgresql+psycopg2://insightflow_user:secret_pass@dpg-abc1234-a.render.com/insightflow_db"
+        assert normalized == "postgresql://insightflow_user:secret_pass@dpg-abc1234-a.render.com/insightflow_db"
 
         raw_std_url = "postgresql://user:pass@localhost:5432/db"
-        assert normalize_database_url(raw_std_url) == "postgresql+psycopg2://user:pass@localhost:5432/db"
+        assert normalize_database_url(raw_std_url) == "postgresql://user:pass@localhost:5432/db"
 
         sqlite_url = "sqlite:///path/to/insightflow.db"
         assert normalize_database_url(sqlite_url) == "sqlite:///path/to/insightflow.db"

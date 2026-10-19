@@ -5,19 +5,25 @@ BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB_PATH = os.path.join(BACKEND_DIR, "insightflow.db")
 DEFAULT_UPLOADS_PATH = os.path.join(BACKEND_DIR, "uploads")
 
+from pydantic import field_validator
+
 def normalize_database_url(url: str) -> str:
     if not url:
         return f"sqlite:///{DEFAULT_DB_PATH}"
     cleaned = url.strip()
     if cleaned.startswith("postgres://"):
-        cleaned = cleaned.replace("postgres://", "postgresql+psycopg2://", 1)
-    elif cleaned.startswith("postgresql://") and not cleaned.startswith("postgresql+"):
-        cleaned = cleaned.replace("postgresql://", "postgresql+psycopg2://", 1)
+        cleaned = cleaned.replace("postgres://", "postgresql://", 1)
     return cleaned
 
 class Settings(BaseSettings):
     app_name: str = "InsightFlow API"
-    database_url: str = normalize_database_url(os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}"))
+    database_url: str = f"sqlite:///{DEFAULT_DB_PATH}"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def validate_database_url(cls, v: str) -> str:
+        return normalize_database_url(v)
+
     upload_dir: str = os.getenv("UPLOAD_DIR", DEFAULT_UPLOADS_PATH)
     ai_provider: str = os.getenv("AI_PROVIDER", "auto")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
