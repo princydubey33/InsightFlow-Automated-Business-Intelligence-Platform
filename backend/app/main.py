@@ -22,22 +22,25 @@ user_models.Base.metadata.create_all(bind=engine)
 dataset_models.Base.metadata.create_all(bind=engine)
 activity_models.Base.metadata.create_all(bind=engine)
 
-from sqlalchemy import text
-def ensure_user_columns():
-    with engine.connect() as conn:
-        try:
-            result = conn.execute(text("PRAGMA table_info(users)"))
-            cols = [row[1] for row in result.fetchall()]
-            if cols:
-                if "reset_token" not in cols:
+from sqlalchemy import inspect, text
+def ensure_schema_migrations():
+    try:
+        inspector = inspect(engine)
+        if "users" in inspector.get_table_names():
+            columns = [col["name"] for col in inspector.get_columns("users")]
+            with engine.connect() as conn:
+                if "reset_token" not in columns:
                     conn.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR"))
-                if "reset_token_expires" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires DATETIME"))
+                if "reset_token_expires" not in columns:
+                    if engine.dialect.name == "postgresql":
+                        conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP WITH TIME ZONE"))
+                    else:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires DATETIME"))
                 conn.commit()
-        except Exception as e:
-            print(f"Column migration warning: {e}")
+    except Exception as e:
+        print(f"Database schema migration warning: {e}")
 
-ensure_user_columns()
+ensure_schema_migrations()
 
 app = FastAPI(title=settings.app_name)
 

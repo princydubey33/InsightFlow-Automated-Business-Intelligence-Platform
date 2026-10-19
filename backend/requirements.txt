@@ -9,3 +9,4 @@ openpyxl
 python-dotenv
 httpx
 email-validator
+psycopg2-binary
